@@ -121,40 +121,16 @@ namespace OmenMon.Hardware.Platform {
             this.System = new Settings();
         }
 
-        // Initializes the temperature controls
+        // Initializes the temperature controls (EC-based CPU/GPU sensors)
         private void InitTemperature() {
+            // Only CPU and GPU sensors
+            this.Temperature = new IPlatformReadComponent[2];
+            this.TemperatureUse = new bool[2] { true, true };
 
-            // Set up the temperature sensor array based on the configuration data
-            this.Temperature = new IPlatformReadComponent[Config.TemperatureSensor.Count];
-            this.TemperatureUse = new bool[Config.TemperatureSensor.Count];
-
-            // Populate the temperature sensor array
-            int i = 0;
-            foreach(string name in Config.TemperatureSensor.Keys) {
-
-                // Set whether the sensor can be used for maximum temperature
-                this.TemperatureUse[i] = Config.TemperatureSensor[name].Use;
-
-                // Process each sensor loaded from the configuration
-                switch(Config.TemperatureSensor[name].Source) {
-
-                    // Add an Embedded Controller sensor
-                    case PlatformData.LinkType.EmbeddedController:
-                        this.Temperature[i++] = new EcComponent(
-                            Config.TemperatureSensor[name].Register,
-                            Config.MaxBelievableTemperature);
-                        break;
-
-                    // Add a WMI BIOS sensor
-                    case PlatformData.LinkType.WmiBios:
-                        this.Temperature[i++] =
-                            new WmiBiosTemperatureComponent(Config.MaxBelievableTemperature);
-                        break;
-
-                }
-
-            }
-
+            // CPU temperature from EC CPUT register
+            this.Temperature[0] = new CpuTemperatureComponent(Config.MaxBelievableTemperature);
+            // GPU temperature from EC GPUT register
+            this.Temperature[1] = new GpuTemperatureComponent(Config.MaxBelievableTemperature);
         }
 #endregion
 

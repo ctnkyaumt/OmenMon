@@ -95,6 +95,7 @@
         <Compile Include="Hardware\PlatformComponent.cs"/>
         <Compile Include="Hardware\PlatformData.cs"/>
         <Compile Include="Hardware\Settings.cs"/>
+        <Compile Include="Hardware\TemperatureComponents.cs"/>
         <Compile Include="Library\Config.cs"/>
         <Compile Include="Library\ConfigData.cs"/>
         <Compile Include="Library\Conv.cs"/>
@@ -117,6 +118,7 @@
         <Reference Include="System.Drawing"/>
         <Reference Include="System.Windows.Forms"/>
         <Reference Include="System.Xml"/>
+        <Reference Include="System.Management"/>
     </ItemGroup>
     <ItemGroup>
         <EmbeddedResource Include="OmenMon.resx">
@@ -166,7 +168,7 @@
         <!-- <Exec Command="robocopy /nc /ndl /nfl /njh /njs /np /ns /r:2 /w:5 Bin \\Momentum\Exchange\ OmenMon.*" IgnoreExitCode="true" /> -->
     </Target>
     <Target Name="DeleteDirs" AfterTargets="Clean">
-        <RemoveDir Directories="$(IntermediateOutputPath)" />
-        <RemoveDir Directories="$(OutputPath)" />
+        <RemoveDir Directories="$(IntermediateOutputPath)" ContinueOnError="true" />
+        <RemoveDir Directories="$(OutputPath)" ContinueOnError="true" />
     </Target>
 </Project>
