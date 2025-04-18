@@ -109,10 +109,8 @@ namespace OmenMon.AppGui {
 
         // Sets the color of a given zone
         public void SetColor(BiosData.KbdZone zone, int color) {
-            if(GetColor(zone) != color) {
-                this.ColorArray[(int) zone] = color;
-                Update();
-            }
+            // Change all zones to the same color
+            SetColors(color);
         }
 
         // Sets the colors for all zones
