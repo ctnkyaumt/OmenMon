@@ -363,10 +363,10 @@ namespace OmenMon.Library {
                     PlatformData.LinkType.EmbeddedController,
                     (byte) EmbeddedControllerData.Register.CPUT),
 
-                // GPU temperature (discrete GPU)
-                ["GPU"] = new TemperatureSensorData(
+                // GPU temperature
+                ["GPTM"] = new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.GPUT),
+                    (byte) EmbeddedControllerData.Register.GPTM),
 
                 // Temperature reported by the BIOS
                 // (values more or less a third lower than other readings,
