@@ -303,22 +303,31 @@ namespace OmenMon.Library {
                                 break;
 
                             // Set the optional use flag
-                            // based on the XML attribute
                             bool use = true;
                             try {
                                 Conv.GetBool(node.Attributes[XmlAttrTemperatureSensorUse].Value, out use);
                             } catch {  }
 
+                            // Extract sensor name
+                            string sensorName = node.Attributes[XmlAttrTemperatureSensorName].Value;
+
                             // Check for Embedded Controller sensor source
                             if(node.Attributes[XmlAttrTemperatureSensorSource].Value
                                 == XmlAttrTemperatureSensorSourceValueEc)
+                            {
+                                // Determine register mapping (handle custom keys like 'GPU')
+                                byte register;
+                                if(TemperatureSensor.TryGetValue(sensorName, out var defaultSensorData))
+                                    register = defaultSensorData.Register;
+                                else
+                                    register = (byte) Enum.Parse(typeof(EmbeddedControllerData.Register), sensorName);
 
-                                // Adding a sensor sourced from the Embedded Controller
-                                TemperatureSensorXml[node.Attributes[XmlAttrTemperatureSensorName].Value] =
+                                // Add the EC sensor using the resolved register
+                                TemperatureSensorXml[sensorName] =
                                     new TemperatureSensorData(
                                         PlatformData.LinkType.EmbeddedController,
-                                        (byte) Enum.Parse(typeof(EmbeddedControllerData.Register),
-                                            node.Attributes[XmlAttrTemperatureSensorName].Value), use);
+                                        register, use);
+                            }
 
                             // Check for WMI BIOS sensor source
                             else if(node.Attributes[XmlAttrTemperatureSensorSource].Value

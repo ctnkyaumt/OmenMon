@@ -140,9 +140,14 @@ namespace OmenMon.Hardware.Platform {
 
                     // Add an Embedded Controller sensor
                     case PlatformData.LinkType.EmbeddedController:
-                        this.Temperature[i++] = new EcComponent(
+                        // Create EC sensor and set its display name from config key (e.g. "GPU")
+                        var comp = new EcComponent(
                             Config.TemperatureSensor[name].Register,
                             Config.MaxBelievableTemperature);
+                        comp.SetName(name);
+                        this.Temperature[i++] = comp;
+                        global::System.Diagnostics.Debug.WriteLine(
+                            $"Temp sensor {i} → key='{name}', component name='{comp.GetName()}', register=0x{comp.GetLinkType()}" );
                         break;
 
                     // Add a WMI BIOS sensor

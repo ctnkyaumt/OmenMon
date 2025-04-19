@@ -10,6 +10,7 @@ using OmenMon.External;
 using OmenMon.Hardware.Bios;
 using OmenMon.Hardware.Platform;
 using OmenMon.Library;
+using System.Diagnostics;
 
 namespace OmenMon.AppGui {
 
@@ -739,7 +740,6 @@ namespace OmenMon.AppGui {
                 this.CmbFanProg.SelectedValue = Context.Op.Program.GetName();
             } catch { }
 
-
         }
 
         // Updates the fan group controls section
@@ -925,12 +925,12 @@ namespace OmenMon.AppGui {
             Label labelCaption = ((Label) this.GrpTmp.Controls.Find(prefix + Gui.S_CAP, false)[0]);
             Label labelValue = ((Label) this.GrpTmp.Controls[this.GrpTmp.Controls.IndexOf(labelCaption) + 1]);
 
-            // Update the status
-            labelCaption.Enabled = value > 0;
+            // Always show sensor captions
+            labelCaption.Enabled = true;
 
-            // Update the value
-            labelValue.Text = value == 0 ? "" :
-                value.ToString() + Config.Locale.Get(Config.L_UNIT + "Temperature" + Config.LS_CUSTOM_FONT)
+            // Always update the value (show zero if necessary)
+            labelValue.Text = value.ToString()
+                + Config.Locale.Get(Config.L_UNIT + "Temperature" + Config.LS_CUSTOM_FONT)
                 + (valueTrend == PlatformData.ValueTrend.Unchanged ?
                     Conv.GetChar(Conv.SpecialChar.SpaceEn) : valueTrend == PlatformData.ValueTrend.Ascending ?
                         Conv.GetChar(Conv.SpecialChar.SupPlus) : Conv.GetChar(Conv.SpecialChar.SupMinus));

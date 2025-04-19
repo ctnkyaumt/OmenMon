@@ -363,46 +363,11 @@ namespace OmenMon.Library {
                     PlatformData.LinkType.EmbeddedController,
                     (byte) EmbeddedControllerData.Register.CPUT),
 
-                // GPU temperature
-                ["GPTM"] = new TemperatureSensorData(
+                // GPU temperature (renamed from GPTM)
+                ["GPU"] = new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.GPTM),
-
-                // Temperature reported by the BIOS
-                // (values more or less a third lower than other readings,
-                // thus currently makes no sense to use for maximum check)
-                ["BIOS"] = new TemperatureSensorData(
-                    PlatformData.LinkType.WmiBios, false),
-
-                // Platform Controller Hub temperature
-                ["RTMP"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.RTMP),
-
-                // Memory temperature
-                ["TMP1"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.TMP1),
-
-                // Auxilliary EC temperature probe #2
-                ["TNT2"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.TNT2),
-
-                // Auxilliary EC temperature probe #3
-                ["TNT3"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.TNT3),
-
-                // Auxilliary EC temperature probe #4
-                ["TNT4"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.TNT4),
-
-                // Auxilliary EC temperature probe #5
-                ["TNT5"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.TNT5) };
+                    (byte) EmbeddedControllerData.Register.GPTM)
+            };
 
         // Maximum number of temperature sensors
         public const int TemperatureSensorMax = 9;
