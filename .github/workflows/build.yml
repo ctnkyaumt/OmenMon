@@ -134,19 +134,31 @@ jobs:
         -t:Build ${{ env.SOLUTION_FILE }}
 
     - name: "Retrieve Certificate"
+      id: cert_retrieve
+      continue-on-error: true
       working-directory: ${{ github.workspace }}
       env:
         CODE_SIGN_CERT: ${{ secrets.CODE_SIGN_CERT }}
-      run: >
-          echo $CODE_SIGN_CERT > OmenMon-GitHub.pfx.txt
+      run: |
+        if [ -z "$CODE_SIGN_CERT" ]; then
+          echo "No certificate provided, skipping code signing"
+          exit 1
+        else
+          echo "$CODE_SIGN_CERT" > OmenMon-GitHub.pfx.txt
+        fi
       shell: bash
 
     - name: "Decode Certificate"
+      if: steps.cert_retrieve.outcome == 'success'
+      continue-on-error: true
+      id: cert_decode
       working-directory: ${{ github.workspace }}
       run: >
           certutil -decode OmenMon-GitHub.pfx.txt OmenMon-GitHub.pfx
 
     - name: "Sign OmenMon"
+      if: steps.cert_decode.outcome == 'success'
+      continue-on-error: true
       working-directory: ${{ github.workspace }}
       run: >
         & 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe' sign
