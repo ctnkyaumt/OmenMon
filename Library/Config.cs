@@ -297,54 +297,39 @@ namespace OmenMon.Library {
                     foreach(XmlNode node in xml.SelectNodes(XmlPrefixTemperatureSensor)) {
                         // Invalid entries will be discarded at this step
                         try {
-
-                            // Abort if more than the maximum number of sensors defined already
-                            if(TemperatureSensorXml.Count >= TemperatureSensorMax)
-                                break;
-
-                            // Set the optional use flag
-                            bool use = true;
-                            try {
-                                Conv.GetBool(node.Attributes[XmlAttrTemperatureSensorUse].Value, out use);
-                            } catch {  }
-
                             // Extract sensor name
                             string sensorName = node.Attributes[XmlAttrTemperatureSensorName].Value;
+                            
+                            // Only process CPU or GPU sensors
+                            if (sensorName == "CPUT" || sensorName == "GPU") {
+                                // Set the optional use flag
+                                bool use = true;
+                                try {
+                                    Conv.GetBool(node.Attributes[XmlAttrTemperatureSensorUse].Value, out use);
+                                } catch {  }
 
-                            // Check for Embedded Controller sensor source
-                            if(node.Attributes[XmlAttrTemperatureSensorSource].Value
-                                == XmlAttrTemperatureSensorSourceValueEc)
-                            {
-                                // Determine register mapping (handle custom keys like 'GPU')
-                                byte register;
-                                if(TemperatureSensor.TryGetValue(sensorName, out var defaultSensorData))
-                                    register = defaultSensorData.Register;
-                                else
-                                    register = (byte) Enum.Parse(typeof(EmbeddedControllerData.Register), sensorName);
+                                // Check for Embedded Controller sensor source
+                                if(node.Attributes[XmlAttrTemperatureSensorSource].Value
+                                    == XmlAttrTemperatureSensorSourceValueEc)
+                                {
+                                    // Determine register mapping (handle custom keys like 'GPU')
+                                    byte register;
+                                    if(TemperatureSensor.TryGetValue(sensorName, out var defaultSensorData))
+                                        register = defaultSensorData.Register;
+                                    else
+                                        register = (byte) Enum.Parse(typeof(EmbeddedControllerData.Register), sensorName);
 
-                                // Add the EC sensor using the resolved register
-                                TemperatureSensorXml[sensorName] =
-                                    new TemperatureSensorData(
-                                        PlatformData.LinkType.EmbeddedController,
-                                        register, use);
+                                    // Add the EC sensor using the resolved register
+                                    TemperatureSensorXml[sensorName] =
+                                        new TemperatureSensorData(
+                                            PlatformData.LinkType.EmbeddedController,
+                                            register, use);
+                                }
+
+                                // Record found usable
+                                if(use) usable = true;
                             }
-
-                            // Check for WMI BIOS sensor source
-                            else if(node.Attributes[XmlAttrTemperatureSensorSource].Value
-                                == XmlAttrTemperatureSensorSourceValueBios)
-
-                                // Adding a sensor sourced from the WMI BIOS
-                                TemperatureSensorXml[XmlAttrTemperatureSensorSourceValueBios] =
-                                    new TemperatureSensorData(PlatformData.LinkType.WmiBios, use);
-
-                            // Throw an exception for any unknown sources
-                            else throw new ArgumentOutOfRangeException();
-
-                            // Record found usable
-                            if(use) usable = true;
-
                         } catch { }
-
                     }
 
                     // Replace the defaults with configured temperature sensors unless none
@@ -550,20 +535,21 @@ namespace OmenMon.Library {
 
                     // Iterate through the sensor entries
                     foreach(string name in TemperatureSensor.Keys) {
+                        // Only save CPU and GPU sensors
+                        if (name == "CPUT" || name == "GPU") {
+                            // Create an element for each sensor
+                            XmlElement node = (XmlElement) xmlTemperature.AppendChild(
+                                    xml.CreateElement(XmlElementTemperatureSensor));
 
-                        // Create an element for each sensor
-                        XmlElement node = (XmlElement) xmlTemperature.AppendChild(
-                                xml.CreateElement(XmlElementTemperatureSensor));
+                            // Store the preset name and source in attributes
+                            node.SetAttribute(XmlAttrTemperatureSensorName, name);
+                            node.SetAttribute(XmlAttrTemperatureSensorSource,
+                                TemperatureSensor[name].Source == PlatformData.LinkType.EmbeddedController ?
+                                    XmlAttrTemperatureSensorSourceValueEc : XmlAttrTemperatureSensorSourceValueBios);
 
-                        // Store the preset name and source in attributes
-                        node.SetAttribute(XmlAttrTemperatureSensorName, name);
-                        node.SetAttribute(XmlAttrTemperatureSensorSource,
-                            TemperatureSensor[name].Source == PlatformData.LinkType.EmbeddedController ?
-                                XmlAttrTemperatureSensorSourceValueEc : XmlAttrTemperatureSensorSourceValueBios);
-
-                        if(!TemperatureSensor[name].Use)
-                            node.SetAttribute(XmlAttrTemperatureSensorUse, XmlSaveBoolFalse);
-
+                            if(!TemperatureSensor[name].Use)
+                                node.SetAttribute(XmlAttrTemperatureSensorUse, XmlSaveBoolFalse);
+                        }
                     }
 
                     // The remaining configuration values
