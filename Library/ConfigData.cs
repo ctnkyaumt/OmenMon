@@ -361,12 +361,12 @@ namespace OmenMon.Library {
                 // CPU temperature
                 ["CPUT"] = new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
-                    0xB0), // Value 0x2B (43°C) matches LHM reading of ~45°C
+                    0xB0), // Value 0x31 (49°C) close to LHM reading of ~45°C
 
                 // GPU temperature
                 ["GPU"] = new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
-                    0xB2) // Value 0x2F (47°C) close to LHM reading of ~48°C
+                    0xB3) // Value 0x2F (47°C) close to LHM reading of ~41-49°C
             };
 
         // Maximum number of temperature sensors
