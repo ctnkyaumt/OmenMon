@@ -108,7 +108,7 @@ jobs:
         /v ${{ vars.BIN_DIR }}\\OmenMon.exe
 
     - name: "Upload OmenMon"
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         if-no-files-found: error
         name: ${{ github.event.repository.name }}

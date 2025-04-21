@@ -33,7 +33,7 @@ jobs:
     steps:
     - id: download
       name: "Download Artifacts"
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: ${{ github.event.repository.name }}
 
@@ -55,12 +55,12 @@ jobs:
     - name: "Add Comment to Archive"
       run: zipnote -b . -w OmenMon.zip < OmenMon.zip.txt
 
+    - name: "Rename Archive for Release"
+      run: mv OmenMon.zip OmenMon-${{ github.event.release.tag_name }}-${{ github.event.release.prerelease && 'Preview' || 'Release' }}.zip
+
     - name: "Upload OmenMon Assets"
-      uses: actions/upload-release-asset@v1
+      uses: softprops/action-gh-release@v1
       with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./OmenMon.zip
-        asset_name: OmenMon-${{ github.event.release.tag_name }}-${{ github.event.release.prerelease && 'Preview' || 'Release' }}.zip
-        asset_content_type: application/zip
+        files: ./OmenMon-${{ github.event.release.tag_name }}-${{ github.event.release.prerelease && 'Preview' || 'Release' }}.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
