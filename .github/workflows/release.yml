@@ -45,10 +45,12 @@ jobs:
 
     - name: "Create Archive Comment"
       run: |
+        BUILD_NUM="${{ vars.BUILD_NUMBER || '0' }}"
+        TAG_VERSION="${{ github.event.release.tag_name }}"
         cat >OmenMon.zip.txt <<EOF
         @ (zip file comment below this line)
-          //\\\\\\\\   OmenMon Version ${{ github.event.release.tag_name }}-${{ github.event.release.prerelease && 'Preview' || 'Release' }}
-         //  \\\\\\\\  Build ${{ vars.BUILD_NUMBER }} * $(date -u +"%Y-%m-%d %H:%M") UTC
+          //\\\\\\\\   OmenMon Version $TAG_VERSION-${{ github.event.release.prerelease && 'Preview' || 'Release' }}
+         //  \\\\\\\\  Build $BUILD_NUM * $(date -u +"%Y-%m-%d %H:%M") UTC
              //  https://omenmon.github.io/
         EOF
 
