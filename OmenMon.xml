@@ -28,12 +28,18 @@
         <!-- Note: two default entries are hard-coded in the application
              and will appear if there is nothing else to show instead -->
         <ColorPresets>
-            <Preset Name="DefaultOem">0F84FA:710FFA:F9350F:FAAC0F</Preset>
-            <Preset Name="DefaultApp">0080FF:00FF00:00FF00:FFFFFF</Preset>
             <Preset Name="All Amber">FF8800:FF8800:FF8800:FF8800</Preset>
             <Preset Name="All White">FFFFFF:FFFFFF:FFFFFF:FFFFFF</Preset>
-            <Preset Name="Cyan Magenta Yellow">FFFF00:FF0080:3AE5E7:FFFF00</Preset>
-            <Preset Name="Red Green Blue">0000FF:00FF00:FF0000:FFFFFF</Preset>
+            <Preset Name="Lime">00FF00:00FF00:00FF00:00FF00</Preset>
+            <Preset Name="Pikachu">FFF700:FFF700:FFF700:FFF700</Preset>
+            <Preset Name="Aqua">00FFFF:00FFFF:00FFFF:00FFFF</Preset>
+            <Preset Name="Flamingo">FC8EAC:FC8EAC:FC8EAC:FC8EAC</Preset>
+            <Preset Name="Midnight">191970:191970:191970:191970</Preset>
+            <Preset Name="Coral">FF7F50:FF7F50:FF7F50:FF7F50</Preset>
+            <Preset Name="Lavender">E6E6FA:E6E6FA:E6E6FA:E6E6FA</Preset>
+            <Preset Name="Pumpkin">FF7518:FF7518:FF7518:FF7518</Preset>
+            <Preset Name="Bubblegum">FFC1CC:FFC1CC:FFC1CC:FFC1CC</Preset>
+            <Preset Name="Sky">87CEEB:87CEEB:87CEEB:87CEEB</Preset>
         </ColorPresets>
 
         <!-- Embedded Controller -->
@@ -227,9 +233,6 @@
         <!-- Note: nine default sensors are hard-coded in the application
              and will be used instead if none are defined here -->
         <Temperature>
-            <Sensor Name="CPUT" Source="EC" />
-            <Sensor Name="GPU" Source="EC" />
-            <Sensor Name="SSD" Source="EC" />
         </Temperature>
 
         <!-- Update Interval -->
