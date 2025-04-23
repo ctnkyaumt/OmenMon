@@ -358,8 +358,8 @@ namespace OmenMon.Library {
         public static Dictionary<string, TemperatureSensorData> TemperatureSensor =
             new Dictionary<string, TemperatureSensorData> {
 
-                // CPU temperature
-                ["CPU"] = new TemperatureSensorData(
+                // CPU temperature 
+                ["CPUT"] = new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
                     0xB0), // Value 0x27 (39°C) for CPU temperature
 

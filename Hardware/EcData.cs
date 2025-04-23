@@ -51,161 +51,83 @@ namespace OmenMon.Hardware.Ec {
         // Xxxx - Registers with no DSDT label where purpose identified, and <xxx> is a descriptive string
 
         public enum Register : byte {
+            // R0x02: Unknown
+            VOFS = 0x02,  // Version Offset?
 
-            // Identified
-            XSS1 = 0x2C,  // L Fan Set Speed [%]
-            XSS2 = 0x2D,  // R Fan Set Speed [%]
-            XGS1 = 0x2E,  // L Fan Get Speed [%]
-            XGS2 = 0x2F,  // R Fan Get Speed [%]
-            SRP1 = 0x34,  // L Fan Set Speed [krpm]
-            SRP2 = 0x35,  // R Fan Set Speed [krpm]
-            TNT2 = 0x47,  // Temperature [°C]
-            TNT3 = 0x48,  // Temperature [°C]
-            TNT4 = 0x49,  // Temperature [°C]
-            IRSN = 0x4A,  // Temperature [°C]
-            TNT5 = 0x4B,  // Temperature [°C]
-            CPUT = 0x57,  // Temperature: CPU [°C]
-            RTMP = 0x58,  // Temperature [°C]
-            TMP1 = 0x59,  // Temperature [°C]
-            XHID = 0x5F,  // HID Disable Toggle
-            OMCC = 0x62,  // Manual Fan Control
-            XFCD = 0x63,  // Manual Fan Auto Countdown [s]
-            HPCM = 0x95,  // Performance Mode
-            XBCH = 0x96,  // Battery Charge Level
-            QBHK = 0xA0,  // Last Hotkey
-            QBBB = 0xA2,  // HID-Related (?)
-            RPM1 = 0xB0,  // L Fan Get Speed [rpm] 1/2
-            RPM2 = 0xB1,  // L Fan Get Speed [rpm] 2/2
-            RPM3 = 0xB2,  // R Fan Get Speed [rpm] 1/2
-            RPM4 = 0xB3,  // R Fan Get Speed [rpm] 2/2
-            GPTM = 0xB7,  // Temperature: GPU [°C]
-            CLOW = 0xBA,  // Minimum Power State
-            CMAX = 0xBB,  // Maximum Power State
-            FFFF = 0xEC,  // Max Fan Speed Toggle
-            SFAN = 0xF4,  // Fan Toggle
-            FTHM = 0xF9,  // Bit #4: GFXM, #7: FTHM Thermal Threshold Reached
+            // R0x10: Unknown
+            PRTS = 0x10,  // (Value 0x9)
+
+            // R0x18: Flag Byte for Current Settings
+            HPCM = 0x18,  // HP Cooling Mode
+
+            // R0x20: Main Embedded Controller Flags
+            AUDI = 0x20,  // Bit #2: MUTE, #6: OMEN Audio?
             
-            // Unidentified but mentioned in DSDT
-            SMPR = 0x00,
-            SMST = 0x01,
-            SMAD = 0x02,
-            SMCM = 0x03,
-            SMD0 = 0x04,  // SMD0 01/32
-            SMD1 = 0x04,  // SMD0 02/32
-            SMD2 = 0x05,  // SMD0 03/32
-            SMD3 = 0x06,  // SMD0 04/32
-            SMD4 = 0x07,  // SMD0 05/32
-            SMD5 = 0x08,  // SMD0 06/32
-            SMD6 = 0x09,  // SMD0 07/32
-            SMD7 = 0x0A,  // SMD0 08/32
-            SMD8 = 0x0B,  // SMD0 09/32
-            SMD9 = 0x0C,  // SMD0 10/32
-            SMDA = 0x0D,  // SMD0 11/32
-            SMDB = 0x0E,  // SMD0 12/32
-            SMDC = 0x0F,  // SMD0 13/32
-            SMDD = 0x10,  // SMD0 14/32
-            SMDE = 0x11,  // SMD0 15/32
-            SMDF = 0x12,  // SMD0 16/32
-            SME0 = 0x13,  // SMD0 17/32
-            SME1 = 0x14,  // SMD0 18/32
-            SME2 = 0x15,  // SMD0 19/32
-            SME3 = 0x16,  // SMD0 20/32
-            SME4 = 0x17,  // SMD0 21/32
-            SME5 = 0x18,  // SMD0 22/32
-            SME6 = 0x19,  // SMD0 23/32
-            SME7 = 0x1A,  // SMD0 24/32
-            SME8 = 0x1B,  // SMD0 25/32
-            SME9 = 0x1C,  // SMD0 26/32
-            SMEA = 0x1E,  // SMD0 27/32
-            SMEB = 0x1F,  // SMD0 28/32
-            SMEC = 0x20,  // SMD0 29/32
-            SMED = 0x21,  // SMD0 30/32
-            SMEE = 0x22,  // SMD0 31/32
-            SMEF = 0x23,  // SMD0 32/32
-            BCNT = 0x24,
-            SMAA = 0x25,
-            BTPL = 0x30,  // Word together with BTPL
-            BTPH = 0x31,  // Word together with BTPH
-            BCLC = 0x32,
-            ECL1 = 0x37,
-            ECL2 = 0x38,
-            ECL4 = 0x39,
-            EL1R = 0x3A,
-            EL2R = 0x3B,
-            EL4R = 0x3C,
-            RX3A = 0x40,  // Bit #0: SW2S, #3: ACCC, #4: TRPM
-            RX4A = 0x41,  // Bit #0: W7OS, #1: QWOS, #3: SUSE, #4: RFLG
-            RX2A = 0x42,  // Bit #1: CALS, #4: KBBL
-            RX3B = 0x43,  // Bit #2: ACPS, #3: ACKY, #4: GFXT
-            DSMB = 0x44,
-            STRM = 0x4C,
-            LIDE = 0x4E,
-            RX4B = 0x50,  // Bit #2: PTHM, #4: S3CA, #5: DPTL, #6: IHEF
-            ECLS = 0x52,
-            CPHK = 0x53,
-            EC45 = 0x55,
-            HPTC = 0x5B,
-            SHPM = 0x61,
-            RX3C = 0x67,  // Bit #0: LDBG, #2: GC6R, #3: IGC6
-            PLGS = 0x68,
-            BXXX = 0x69,  // Bit #4: BCTF, #5: BMNF, #6: BTVD, #7: BF10
-            GWKR = 0x6C,
-            BADC = 0x70,  // Word together with BADD
-            BADD = 0x71,  // Word together with BADC
-            BFCC = 0x72,  // Word together with BFCD
-            BFCD = 0x72,  // Word together with BFCC
-            BVLB = 0x74,
-            BVHB = 0x75,
-            BDVO = 0x76,
-            ECTB = 0x7F,
-            MBST = 0x82,
-            MCUR = 0x83,  // Word together with MCUS
-            MCUS = 0x84,  // Word together with MCUR
-            MBRM = 0x85,  // Word together with MBRN
-            MBRN = 0x86,  // Word together with MBRM
-            MBCV = 0x87,  // Word together with MBCW
-            MBCW = 0x88,  // Word together with MBCV
-            GPUT = 0x89,
-            LEDM = 0x8B,
-            MBFC = 0x8D,
-            NVDO = 0x90,
-            ECDO = 0x91,
-            GSXX = 0x94,  // Bit #0: GSSU, #1: GSMS
-            ADPX = 0xA3,
-            RX2B = 0xA4,  // Bit #0: MBTS, #7: BACR
-            MBDC = 0xA5,
-            RX2C = 0xA7,  // Bit #0: ENWD, #1: TMPR
-            SXXX = 0xAA,  // Bit #1: SMSZ, #2: SE1N, #3: SE2N, #4: SOIE, #7 RCDS
-            SADP = 0xAD,
-            EPWM = 0xB8,
-            DPPC = 0xC1,
-            SHXX = 0xC5,  // Bit #0: SHB1, #1: SHB2, #2: SHB3, #3: SHB4, #4: SHOK, #5: SHFL, #6: SHNP, #7: SHEN
-            CVTS = 0xC6,
-            CSFG = 0xCA,
-            EBPL = 0xD0,
-            S1A1 = 0xD2,
-            S2A1 = 0xD3,
-            PSHD = 0xD4,
-            PSLD = 0xD5,
-            DBPL = 0xD6,
-            STSP = 0xD7,  
-            PSIN = 0xDA,
-            RX4C = 0xDB,  // Bit #0: PSKB0, #1: PSTP, #3: PWOL, #4: RTCE
-            S1A0 = 0xDC,
-            S2A0 = 0xDD,
-            NVDX = 0xDE,
-            ECDX = 0xDF,
-            DLYT = 0xE0,
-            DLY2 = 0xE1,
-            KBT0 = 0xE2,  
-            SFHK = 0xE6,
-            DTMT = 0xE9,
-            PL12 = 0xEA,
-            ETMT = 0xEB,
-            RX2D = 0xF0,  // Bit #0: PARS, #7: MUCR
+            // R0x28-R0x36: Temperature-Related Flags
+            OMCC = 0x28,  // Bit #0: Manual Fan Control
+            
+            // R0x57-R0x68: Standard Temperature Sensors
+            CPUT = 0x57,  // Temperature: CPU [°C]
+            SKIN = 0x58,  // Temperature: SKIN [°C]
+            RTMP = 0x59,  // Temperature: Other [°C] (PCH?)
+            TMP1 = 0x5A,  // Temperature: Other [°C]
+            DGTS = 0x5B,  // Temperature: Unknown [°C]
+            
+            // R0xB0-R0xB9: More Temperature Sensors
+            TEMP_CPU = 0xB0,  // Temperature: CPU [°C] (Duplicate)
+            TEMP_GPU = 0xB2,  // Temperature: GPU [°C]
+            TEMP_SSD = 0xB7,  // Temperature: SSD [°C]
+            
+            // R0x5C-R0x5F: TNT# Temperature Sensors
+            TNT1 = 0x5C,  // Temperature: TNT1 (unused?)
+            TNT2 = 0x5D,  // Temperature: TNT2 Unknown
+            TNT3 = 0x5E,  // Temperature: TNT3 Storage
+            TNT4 = 0x5F,  // Temperature: TNT4 Storage
+            TNT5 = 0x60,  // Temperature: TNT5 Unknown
+            TNT6 = 0x61,  // Temperature: TNT6 (unused?)
+            TNT7 = 0x62,  // Temperature: TNT7 (unused?)
+            TNT8 = 0x63,  // Temperature: TNT8 (unused?)
+            
+            // R0x64-R0x68: More Temperature Sensors
+            SKNM = 0x64,  // Temperature: SKNM Unknown
+            CHTP = 0x65,  // Temperature: CHTP Unknown
+            VRMP = 0x66,  // Temperature: VRMP Unknown
+            TCHG = 0x67,  // Temperature: TCHG Unknown
+            TGPU = 0x68,  // Temperature: GPU [°C]
+
+            // R0x6C-R0x6F: Fan Speeds (Word)
+            RPM1 = 0x6C,  // Fan Speed: 1 (CPU) [RPM]
+            RPM2 = 0x6E,  // Fan Speed: 0 (possibly unused)
+            RPM3 = 0x70,  // Fan Speed: 2 (GPU) [RPM]
+            RPM4 = 0x72,  // Fan Speed: 3 (possibly unused)
+
+            // R0x80-R0x82: Fan Control Bytes
+            SRP1 = 0x80,  // Fan Speed Rate Percent: CPU [%]
+            SRP2 = 0x81,  // Fan Speed Rate Percent: GPU [%]
+            SRP3 = 0x82,  // Fan Speed Rate Percent: 3 (possibly unused)
+
+            // R0x90-0x92: Fan Speed Bytes (Indirect)
+            XSS1 = 0x90,  // Fan Speed Setting: 1 (CPU)
+            XSS2 = 0x91,  // Fan Speed Setting: 2 (GPU)
+            XSS3 = 0x92,  // Fan Speed Setting: 3 (possibly unused)
+
+            // R0x98-0x9A: Fan Rate Bytes (Current)
+            XGS1 = 0x98,  // Fan Speed Global: 1 (CPU) [%]
+            XGS2 = 0x99,  // Fan Speed Global: 2 (GPU) [%]
+            XGS3 = 0x9A,  // Fan Speed Global: 3 (possibly unused)
+
+            // R0xA8: Countdown Timer
+            XFCD = 0xA8,  // Fan Countdown [s]
+
+            // R0xD0: Fan Control Flag
+            SFAN = 0xD0,  // Bit #0: Off (silent), #1: Manual (constant), #2: Maximum
+
+            // R0xF0-R0xF7: Graphics-related Flags
+            ZMB0 = 0xF0,  // User Lid Close
+            ZMB1 = 0xF1,  // Bit #3: _HID?
             RX2E = 0xF2,  // Bit #0: ZPDD, #7: ENPA
             HDMI = 0xF7,
-            NVDS = 0xF8
+            NVDS = 0xF8,
         }
 #endregion
 
