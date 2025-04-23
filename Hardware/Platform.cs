@@ -133,7 +133,7 @@ namespace OmenMon.Hardware.Platform {
             int i = 0;
             foreach(System.Collections.DictionaryEntry entry in Config.TemperatureSensor) {
                 string name = (string)entry.Key;
-                TemperatureSensorData sensorData = (Config.TemperatureSensorData)entry.Value;
+                Library.Config.TemperatureSensorData sensorData = (Library.Config.TemperatureSensorData)entry.Value;
 
                 // Set whether the sensor can be used for maximum temperature
                 this.TemperatureUse[i] = sensorData.Use;
@@ -146,7 +146,7 @@ namespace OmenMon.Hardware.Platform {
                         // Create EC sensor and set its display name from config key (e.g. "GPU")
                         var comp = new EcComponent(
                             sensorData.Register,
-                            Config.MaxBelievableTemperature);
+                            (int)Config.MaxBelievableTemperature);
                         comp.SetName(name);
                         this.Temperature[i++] = comp;
                         global::System.Diagnostics.Debug.WriteLine(
