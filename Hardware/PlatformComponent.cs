@@ -1,5 +1,5 @@
   //\\   OmenMon: Hardware Monitoring & Control Utility
- //  \\  Copyright © 2023 Piotr Szczepański * License: GPL3
+ //  \\  Copyright 2023 Piotr Szczepański * License: GPL3
      //  https://omenmon.github.io/
 
 using System;
@@ -270,10 +270,15 @@ namespace OmenMon.Hardware.Platform {
 
         // Reads a value from the Embedded Controller
         protected override int Read() {
+            int raw;
             if(this.Size == PlatformData.DataSize.Byte)
-                return Hw.EcGetByte(this.Register);
+                raw = Hw.EcGetByte(this.Register);
             else
-                return Hw.EcGetWord(this.Register);
+                raw = Hw.EcGetWord(this.Register);
+            // Apply -2 offset for GPU temperature register
+            if(this.Register == 0xB4)
+                raw = Math.Max(0, raw - 2);
+            return raw;
         }
 
         // Writes a value to the Embedded Controller

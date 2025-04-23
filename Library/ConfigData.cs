@@ -366,7 +366,6 @@ namespace OmenMon.Library {
                 "GPU", new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
                     0xB4, // New EC address
-                    offset: -2) // Apply -2°C offset to match accurate reading
             },
             {
                 "SSD", new TemperatureSensorData(
