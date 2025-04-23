@@ -301,7 +301,7 @@ namespace OmenMon.Library {
                             string sensorName = node.Attributes[XmlAttrTemperatureSensorName].Value;
                             
                             // Only process CPU or GPU sensors
-                            if (sensorName == "CPUT" || sensorName == "GPU") {
+                            if (sensorName == "CPUT" || sensorName == "CPU" || sensorName == "GPU") {
                                 // Set the optional use flag
                                 bool use = true;
                                 try {
@@ -536,7 +536,7 @@ namespace OmenMon.Library {
                     // Iterate through the sensor entries
                     foreach(string name in TemperatureSensor.Keys) {
                         // Only save CPU and GPU sensors
-                        if (name == "CPUT" || name == "GPU") {
+                        if (name == "CPUT" || name == "CPU" || name == "GPU") {
                             // Create an element for each sensor
                             XmlElement node = (XmlElement) xmlTemperature.AppendChild(
                                     xml.CreateElement(XmlElementTemperatureSensor));

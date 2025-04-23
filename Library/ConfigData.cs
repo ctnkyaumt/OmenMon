@@ -359,14 +359,19 @@ namespace OmenMon.Library {
             new Dictionary<string, TemperatureSensorData> {
 
                 // CPU temperature
-                ["CPUT"] = new TemperatureSensorData(
+                ["CPU"] = new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
                     0xB0), // Value 0x27 (39°C) for CPU temperature
 
                 // GPU temperature (discrete GPU)
                 ["GPU"] = new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
-                    0xB2) // Value 0x2B (43°C) matches LHM reading of 42°C for discrete GPU
+                    0xB2), // Value 0x2B (43°C) matches LHM reading of 42°C for discrete GPU
+
+                // SSD temperature
+                ["SSD"] = new TemperatureSensorData(
+                    PlatformData.LinkType.EmbeddedController,
+                    0xB7)
             };
 
         // Maximum number of temperature sensors
