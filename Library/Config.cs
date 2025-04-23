@@ -292,8 +292,7 @@ namespace OmenMon.Library {
 
                     // Load the temperature sensors
                     bool usable = false;
-                    Dictionary<string, TemperatureSensorData> TemperatureSensorXml
-                        = new Dictionary<string, TemperatureSensorData>();
+                    OrderedDictionary TemperatureSensorXml = new OrderedDictionary();
                     foreach(XmlNode node in xml.SelectNodes(XmlPrefixTemperatureSensor)) {
                         // Invalid entries will be discarded at this step
                         try {
@@ -314,11 +313,11 @@ namespace OmenMon.Library {
                                 {
                                     // Determine register mapping (handle custom keys like 'GPU')
                                     byte register;
-                                    if(TemperatureSensor.TryGetValue(sensorName, out var defaultSensorData)) {
-                                        register = defaultSensorData.Register;
-                                    } else if(sensorName == "CPU" && TemperatureSensor.TryGetValue("CPUT", out defaultSensorData)) {
+                                    if(TemperatureSensor.Contains(sensorName)) {
+                                        register = ((TemperatureSensorData)TemperatureSensor[sensorName]).Register;
+                                    } else if(sensorName == "CPU" && TemperatureSensor.Contains("CPUT")) {
                                         // Special case for CPU -> CPUT mapping
-                                        register = defaultSensorData.Register;
+                                        register = ((TemperatureSensorData)TemperatureSensor["CPUT"]).Register;
                                     } else {
                                         register = (byte) Enum.Parse(typeof(EmbeddedControllerData.Register), sensorName);
                                     }
@@ -538,7 +537,8 @@ namespace OmenMon.Library {
                     xmlTemperature.RemoveAll();
 
                     // Iterate through the sensor entries
-                    foreach(string name in TemperatureSensor.Keys) {
+                    foreach(System.Collections.DictionaryEntry entry in TemperatureSensor) {
+                        string name = (string)entry.Key;
                         // Save CPU, GPU and SSD sensors
                         if (name == "CPUT" || name == "CPU" || name == "GPU" || name == "SSD") {
                             // Create an element for each sensor
@@ -548,10 +548,10 @@ namespace OmenMon.Library {
                             // Store the preset name and source in attributes
                             node.SetAttribute(XmlAttrTemperatureSensorName, name);
                             node.SetAttribute(XmlAttrTemperatureSensorSource,
-                                TemperatureSensor[name].Source == PlatformData.LinkType.EmbeddedController ?
+                                ((TemperatureSensorData)entry.Value).Source == PlatformData.LinkType.EmbeddedController ?
                                     XmlAttrTemperatureSensorSourceValueEc : XmlAttrTemperatureSensorSourceValueBios);
 
-                            if(!TemperatureSensor[name].Use)
+                            if(!((TemperatureSensorData)entry.Value).Use)
                                 node.SetAttribute(XmlAttrTemperatureSensorUse, XmlSaveBoolFalse);
                         }
                     }

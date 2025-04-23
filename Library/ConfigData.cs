@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
@@ -355,24 +356,23 @@ namespace OmenMon.Library {
         }
 
         // Temperature sensors (overriden at runtime if found in the configuration file)
-        public static Dictionary<string, TemperatureSensorData> TemperatureSensor =
-            new Dictionary<string, TemperatureSensorData> {
-
-                // CPU temperature 
-                ["CPUT"] = new TemperatureSensorData(
+        public static OrderedDictionary TemperatureSensor = new OrderedDictionary() {
+            {
+                "CPUT", new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
-                    0xB0), // Value 0x27 (39°C) for CPU temperature
-
-                // GPU temperature (discrete GPU)
-                ["GPU"] = new TemperatureSensorData(
+                    0xB0) // Value 0x27 (39°C) for CPU temperature
+            },
+            {
+                "GPU", new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
-                    0xB2), // Value 0x2B (43°C) matches LHM reading of 42°C for discrete GPU
-
-                // SSD temperature
-                ["SSD"] = new TemperatureSensorData(
+                    0xB2) // Value 0x2B (43°C) matches LHM reading of 42°C for discrete GPU
+            },
+            {
+                "SSD", new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
                     0xB7)
-            };
+            }
+        };
 
         // Maximum number of temperature sensors
         public const int TemperatureSensorMax = 9;
