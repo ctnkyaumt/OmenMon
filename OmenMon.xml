@@ -229,6 +229,7 @@
         <Temperature>
             <Sensor Name="CPUT" Source="EC" />
             <Sensor Name="GPU" Source="EC" />
+            <Sensor Name="SSD" Source="EC" />
         </Temperature>
 
         <!-- Update Interval -->
