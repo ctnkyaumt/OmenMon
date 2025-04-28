@@ -692,8 +692,8 @@ namespace OmenMon.AppGui {
 
             // Use BIOS fan level (krpm) as RPM
             try {
-                this.LblFan0Val.Text = (Context.Op.Platform.Fans.Fan[0].GetLevel() * 1000).ToString(Config.FormatFanSpeed);
-                this.LblFan1Val.Text = (Context.Op.Platform.Fans.Fan[1].GetLevel() * 1000).ToString(Config.FormatFanSpeed);
+                this.LblFan0Val.Text = (Context.Op.Platform.Fans.Fan[0].GetLevel() * 100).ToString(Config.FormatFanSpeed);
+                this.LblFan1Val.Text = (Context.Op.Platform.Fans.Fan[1].GetLevel() * 100).ToString(Config.FormatFanSpeed);
             } catch { }
 
             // Update the fan level [krpm]
