@@ -690,10 +690,10 @@ namespace OmenMon.AppGui {
             // Update the platform fan readings
             Context.Op.Platform.UpdateFans();
 
-            // Update the fan speed [rpm]
+            // Use BIOS fan level (krpm) as RPM
             try {
-                this.LblFan0Val.Text = Context.Op.Platform.Fans.Fan[0].GetSpeed().ToString(Config.FormatFanSpeed);
-                this.LblFan1Val.Text = Context.Op.Platform.Fans.Fan[1].GetSpeed().ToString(Config.FormatFanSpeed);
+                this.LblFan0Val.Text = (Context.Op.Platform.Fans.Fan[0].GetLevel() * 1000).ToString(Config.FormatFanSpeed);
+                this.LblFan1Val.Text = (Context.Op.Platform.Fans.Fan[1].GetLevel() * 1000).ToString(Config.FormatFanSpeed);
             } catch { }
 
             // Update the fan level [krpm]
@@ -707,12 +707,19 @@ namespace OmenMon.AppGui {
                         Context.Op.Platform.Fans.Fan[1].GetLevel(), this.TrkFan1Lvl.Minimum, this.TrkFan1Lvl.Maximum);
             } catch { }
 
-            // Update the fan rate [%]
+            // Use BIOS fan level as % of max for rate display
             try {
-                this.BarFan0Rte.Value = Context.Op.Platform.Fans.Fan[0].GetRate();
-                this.BarFan1Rte.Value = Context.Op.Platform.Fans.Fan[1].GetRate();
-                this.LblFan0Rte.Text = this.BarFan0Rte.Value.ToString();
-                this.LblFan1Rte.Text = this.BarFan1Rte.Value.ToString();
+                int lvl0 = Context.Op.Platform.Fans.Fan[0].GetLevel();
+                int lvl1 = Context.Op.Platform.Fans.Fan[1].GetLevel();
+                int pct0 = lvl0 * 100 / Config.FanLevelMax;
+                int pct1 = lvl1 * 100 / Config.FanLevelMax;
+                // clamp to [0,100]
+                pct0 = pct0 < 0 ? 0 : pct0 > 100 ? 100 : pct0;
+                pct1 = pct1 < 0 ? 0 : pct1 > 100 ? 100 : pct1;
+                this.BarFan0Rte.Value = pct0;
+                this.BarFan1Rte.Value = pct1;
+                this.LblFan0Rte.Text = pct0.ToString();
+                this.LblFan1Rte.Text = pct1.ToString();
             } catch { }
 
             // Show the countdown, if applicable
