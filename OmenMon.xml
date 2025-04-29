@@ -143,13 +143,13 @@
                 <FanMode>Default</FanMode>
                 <GpuPower>Minimum</GpuPower>
                 <Level Temperature="00"><Cpu>00</Cpu><Gpu>00</Gpu></Level>
-                <Level Temperature="50"><Cpu>25</Cpu><Gpu>00</Gpu></Level>
-                <Level Temperature="55"><Cpu>25</Cpu><Gpu>25</Gpu></Level>
-                <Level Temperature="60"><Cpu>30</Cpu><Gpu>30</Gpu></Level>
-                <Level Temperature="65"><Cpu>35</Cpu><Gpu>35</Gpu></Level>
-                <Level Temperature="70"><Cpu>40</Cpu><Gpu>40</Gpu></Level>
-                <Level Temperature="75"><Cpu>45</Cpu><Gpu>45</Gpu></Level>
-                <Level Temperature="80"><Cpu>50</Cpu><Gpu>50</Gpu></Level>
+                <Level Temperature="50"><Cpu>25</Cpu><Gpu>25</Gpu></Level>
+                <Level Temperature="55"><Cpu>30</Cpu><Gpu>30</Gpu></Level>
+                <Level Temperature="60"><Cpu>35</Cpu><Gpu>35</Gpu></Level>
+                <Level Temperature="65"><Cpu>40</Cpu><Gpu>40</Gpu></Level>
+                <Level Temperature="70"><Cpu>45</Cpu><Gpu>45</Gpu></Level>
+                <Level Temperature="75"><Cpu>50</Cpu><Gpu>50</Gpu></Level>
+                <Level Temperature="80"><Cpu>53</Cpu><Gpu>55</Gpu></Level>
                 <Level Temperature="85"><Cpu>55</Cpu><Gpu>57</Gpu></Level>
             </Program>
         </FanPrograms>
