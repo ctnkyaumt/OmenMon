@@ -187,25 +187,61 @@ namespace OmenMon.Hardware.Platform {
         // Special method for properly switching to Auto mode on HP Victus laptops
         // HP Victus models have different EC register mappings than HP Omen models
         public void SetAutoMode(BiosData.FanMode mode) {
-            // First, explicitly disable manual control by setting EC register 0x11 to 0x00
-            this.SetManual(false);
-            
-            // Reset fan speed registers to default values
-            if (Config.FanLevelUseEc) {
-                // Reset both CPU and GPU fan speeds by directly writing to EC
-                this.Fan[0].SetLevel(0);
-                this.Fan[1].SetLevel(0);
+            try {
+                // First, explicitly disable manual control by setting EC register 0x11 to 0x00
+                this.SetManual(false);
+                
+                // Reset fan speed registers to default values
+                if (Config.FanLevelUseEc) {
+                    // Reset both CPU and GPU fan speeds by directly writing to EC
+                    this.Fan[0].SetLevel(0);
+                    this.Fan[1].SetLevel(0);
+                    
+                    // HP Victus 16 specific: Reset critical EC registers
+                    using (Ec ec = new Ec()) {
+                        // Initialize EC access
+                        ec.Initialize();
+                        
+                        // Try to lock the EC
+                        if (ec.Request(1000)) {
+                            try {
+                                // Reset all the important fan control registers
+                                ec.WriteByte(0x0F, 0x00); // Secondary fan control register
+                                ec.WriteByte(0x11, 0x00); // Fan manual control register
+                                ec.WriteByte(0x12, 0x00); // CPU fan speed register
+                                ec.WriteByte(0x14, 0x00); // GPU fan speed register
+                                ec.WriteByte(0x15, 0x00); // Additional fan control register
+                            }
+                            finally {
+                                // Always release the EC lock
+                                ec.Release();
+                            }
+                        }
+                    }
+                }
+                
+                // Make multiple BIOS calls to ensure proper handover to Auto
+                this.SetLevels(new byte[] {0, 0});
+                
+                // Turn off max fan mode if it was on
+                this.SetMax(false);
+                
+                // Wait briefly between operations
+                System.Threading.Thread.Sleep(100);
+                
+                // Make the actual BIOS call to switch to Auto mode
+                Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
+                
+                // Wait briefly to allow settings to take effect
+                System.Threading.Thread.Sleep(100);
+                
+                // Make a second BIOS call to ensure mode is set
+                Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
             }
-            
-            // Make multiple BIOS calls to ensure proper handover to Auto
-            // First reset levels using EC interface
-            this.SetLevels(new byte[] {0, 0});
-            
-            // Make the actual BIOS call to switch to Auto mode
-            Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
-            
-            // Verify mode switch with a second call
-            Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
+            catch (Exception ex) {
+                // If anything fails, fall back to the standard fan mode setting
+                this.SetMode(mode);
+            }
         }
 
         // Retrieves the fan off switch status
