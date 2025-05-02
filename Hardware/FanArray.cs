@@ -42,6 +42,9 @@ namespace OmenMon.Hardware.Platform {
         public bool GetOff();
         public void SetOff(bool flag);
 
+        // Sets the fan mode with special handling for proper Auto mode switching
+        // Ensures EC registers are properly reset for HP Victus compatibility
+        public void SetAutoMode(BiosData.FanMode mode);
 
     }
 #endregion
