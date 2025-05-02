@@ -198,24 +198,25 @@ namespace OmenMon.Hardware.Platform {
                     this.Fan[1].SetLevel(0);
                     
                     // HP Victus 16 specific: Reset critical EC registers
-                    using (Ec ec = new Ec()) {
-                        // Initialize EC access
-                        ec.Initialize();
-                        
-                        // Try to lock the EC
-                        if (ec.Request(1000)) {
-                            try {
-                                // Reset all the important fan control registers
-                                ec.WriteByte(0x0F, 0x00); // Secondary fan control register
-                                ec.WriteByte(0x11, 0x00); // Fan manual control register
-                                ec.WriteByte(0x12, 0x00); // CPU fan speed register
-                                ec.WriteByte(0x14, 0x00); // GPU fan speed register
-                                ec.WriteByte(0x15, 0x00); // Additional fan control register
-                            }
-                            finally {
-                                // Always release the EC lock
-                                ec.Release();
-                            }
+                    // Get the EC singleton instance
+                    IEmbeddedController ec = EmbeddedController.Instance;
+                    
+                    // Initialize EC access
+                    ec.Initialize();
+                    
+                    // Try to lock the EC
+                    if (ec.Request(1000)) {
+                        try {
+                            // Reset all the important fan control registers
+                            ec.WriteByte(0x0F, 0x00); // Secondary fan control register
+                            ec.WriteByte(0x11, 0x00); // Fan manual control register
+                            ec.WriteByte(0x12, 0x00); // CPU fan speed register
+                            ec.WriteByte(0x14, 0x00); // GPU fan speed register
+                            ec.WriteByte(0x15, 0x00); // Additional fan control register
+                        }
+                        finally {
+                            // Always release the EC lock
+                            ec.Release();
                         }
                     }
                 }
@@ -238,7 +239,7 @@ namespace OmenMon.Hardware.Platform {
                 // Make a second BIOS call to ensure mode is set
                 Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
             }
-            catch (Exception ex) {
+            catch (Exception) {
                 // If anything fails, fall back to the standard fan mode setting
                 this.SetMode(mode);
             }
