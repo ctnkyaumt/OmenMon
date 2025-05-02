@@ -1,5 +1,5 @@
   //\\   OmenMon: Hardware Monitoring & Control Utility
- //  \\  Copyright © 2023-2024 Piotr Szczepański * License: GPL3
+ //  \\  Copyright 2023-2024 Piotr Szczepański * License: GPL3
      //  https://omenmon.github.io/
 
 using System;
@@ -369,11 +369,9 @@ namespace OmenMon.AppGui {
                 if(isFanMax) // Disable maximum speed first
                     Context.Op.Platform.Fans.SetMax(false);
 
-                // Set the levels to 0xFF to clear any custom speed settings
-                Context.Op.Platform.Fans.SetLevels(new byte[] {Byte.MaxValue, Byte.MaxValue});
-
-                // Enable automatic fan in the selected mode
-                Context.Op.Platform.Fans.SetMode(fanModeAsk);
+                // Use the enhanced Auto mode switching for HP Victus compatibility
+                // This properly resets EC registers and ensures handover back to Auto control
+                Context.Op.Platform.Fans.SetAutoMode(fanModeAsk);
 
             }
 

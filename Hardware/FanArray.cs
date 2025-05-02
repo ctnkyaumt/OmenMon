@@ -1,5 +1,5 @@
   //\\   OmenMon: Hardware Monitoring & Control Utility
- //  \\  Copyright © 2023 Piotr Szczepański * License: GPL3
+ //  \\  Copyright 2023 Piotr Szczepański * License: GPL3
      //  https://omenmon.github.io/
 
 using System;
@@ -179,6 +179,30 @@ namespace OmenMon.Hardware.Platform {
         public void SetMode(BiosData.FanMode mode) {
             Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
             // Note: WMI BIOS call preferred over this.Mode.SetValue((byte) mode);
+        }
+
+        // Special method for properly switching to Auto mode on HP Victus laptops
+        // HP Victus models have different EC register mappings than HP Omen models
+        public void SetAutoMode(BiosData.FanMode mode) {
+            // First, explicitly disable manual control by setting EC register 0x11 to 0x00
+            this.SetManual(false);
+            
+            // Reset fan speed registers to default values
+            if (Config.FanLevelUseEc) {
+                // Reset both CPU and GPU fan speeds by directly writing to EC
+                this.Fan[0].SetLevel(0);
+                this.Fan[1].SetLevel(0);
+            }
+            
+            // Make multiple BIOS calls to ensure proper handover to Auto
+            // First reset levels using EC interface
+            this.SetLevels(new byte[] {0, 0});
+            
+            // Make the actual BIOS call to switch to Auto mode
+            Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
+            
+            // Verify mode switch with a second call
+            Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
         }
 
         // Retrieves the fan off switch status
