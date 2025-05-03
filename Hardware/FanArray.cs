@@ -184,47 +184,32 @@ namespace OmenMon.Hardware.Platform {
             // Note: WMI BIOS call preferred over this.Mode.SetValue((byte) mode);
         }
 
-        // Special method for properly switching to Auto mode
-        // Based on OMEN Gaming Hub behavior and EC register analysis
-        public void SetAutoMode(BiosData.FanMode mode) {
+        // Switches to Auto fan mode with the specified performance mode
+        public void SetAutoMode(BiosData.FanMode mode = BiosData.FanMode.Default) {
             try {
-                // First, explicitly disable manual control
-                this.SetManual(false);
-                
-                // Reset fan speed registers to default values
-                if (Config.FanLevelUseEc) {
-                    // Get the EC singleton instance
-                    IEmbeddedController ec = EmbeddedController.Instance;
-                    
-                    // Initialize EC access
-                    ec.Initialize();
-                    
-                    // Try to lock the EC
-                    if (ec.Request(1000)) {
-                        try {
-                            // Based on EC dumps comparison between OmenMon and OMEN Hub
-                            // Reset all the important fan control registers in the correct sequence
-                            ec.WriteByte(0x08, 0x0F); // Set fan control mode to auto (from OMEN Hub EC dump)
-                            ec.WriteByte(0x0F, 0x00); // Reset secondary fan control register
-                            ec.WriteByte(0x11, 0x00); // Disable manual fan control
-                            ec.WriteByte(0x12, 0x00); // Reset CPU fan speed register
-                            ec.WriteByte(0x14, 0x00); // Reset GPU fan speed register
-                            ec.WriteByte(0x15, 0x00); // Reset additional fan control register
-                            
-                            // Additional registers that appear to be modified by OMEN Hub
-                            ec.WriteByte(0x18, mode == BiosData.FanMode.Performance ? (byte)0x01 : (byte)0x00); // Set cooling mode based on fan mode
-                        }
-                        finally {
-                            // Always release the EC lock
-                            ec.Release();
-                        }
-                    }
-                }
-                
-                // Turn off max fan mode if it was on
+                // First ensure max fan is off
                 this.SetMax(false);
                 
-                // Make multiple BIOS calls to ensure proper handover to Auto
+                // Reset various EC registers to return control to Windows ACPI
+                Hw.Ec.Write(0x08, 0x0F);  // Critical register for auto mode operation
+                
+                // Ensure manual control is disabled
+                this.SetManual(false);
+                
+                // Reset fan control to allow Windows thermal policy to take over
+                Hw.Ec.Write(0xD5, 0x08);  // Important fan control register - enables thermal policy
+                
+                // Reset all fan speeds to 0 to let EC manage them
+                Hw.Ec.Write(0xD0, 0x00);  // Reset CPU fan speed
+                Hw.Ec.Write(0xD2, 0x00);  // Reset GPU fan speed
+                
+                // Reset cooling policy according to mode
+                if (mode == BiosData.FanMode.Performance)
+                    Hw.Ec.Write(0x09, 0x01);  // Performance thermal policy
+                else
+                    Hw.Ec.Write(0x09, 0x00);  // Default thermal policy
+                
+                // Reset fan level registers through BIOS
                 this.SetLevels(new byte[] {0, 0});
                 
                 // Wait briefly between operations
@@ -237,8 +222,11 @@ namespace OmenMon.Hardware.Platform {
                 // Wait briefly to allow settings to take effect
                 System.Threading.Thread.Sleep(100);
                 
-                // Make a second BIOS call to ensure mode is set
+                // Make a second BIOS call to ensure mode is set and persisted
                 Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
+                
+                // Re-apply fan control flag to ensure Windows takes over
+                Hw.Ec.Write(0xD5, 0x08);
             }
             catch (Exception ex) {
                 // If anything fails, fall back to the standard fan mode setting
