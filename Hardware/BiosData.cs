@@ -1,5 +1,5 @@
   //\\   OmenMon: Hardware Monitoring & Control Utility
- //  \\  Copyright © 2023 Piotr Szczepański * License: GPL3
+ //  \\  Copyright 2023 Piotr Szczepański * License: GPL3
      //  https://omenmon.github.io/
 
 using System;
@@ -56,13 +56,15 @@ namespace OmenMon.Hardware.Bios {
             L5                = 17,  // 0x11 = 0b00010001
             L1                = 32,  // 0x20 = 0b00100000
             L6                = 33,  // 0x21 = 0b00100001
-            Default           = 48,  // 0x30 = 0b00110000
+            Default           = 48,  // 0x30 = 0b00110000 - Balanced mode in OMEN Hub
+            Balanced          = 48,  // 0x30 = 0b00110000 - Same as Default, added for clarity
             L2                = 48,  // 0x30 = 0b00110000
-            Performance       = 49,  // 0x31 = 0b00110001 
+            Performance       = 49,  // 0x31 = 0b00110001 - Performance mode in OMEN Hub
             L7                = 49,  // 0x31 = 0b00110001 
             L3                = 64,  // 0x40 = 0b01000000
             Cool              = 80,  // 0x50 = 0b01010000
-            L4                = 80   // 0x50 = 0b01010000
+            L4                = 80,  // 0x50 = 0b01010000
+            Eco               = 256  // 0x100 = Eco mode in OMEN Hub
         }
 
         // Fan type (per nibble)
