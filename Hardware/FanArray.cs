@@ -239,11 +239,8 @@ namespace OmenMon.Hardware.Platform {
                 
                 // Make a second BIOS call to ensure mode is set
                 Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
-                
-                Log.Info($"Fan mode set to Auto ({mode})");
             }
             catch (Exception ex) {
-                Log.Error($"Failed to set Auto fan mode: {ex.Message}");
                 // If anything fails, fall back to the standard fan mode setting
                 this.SetMode(mode);
             }
