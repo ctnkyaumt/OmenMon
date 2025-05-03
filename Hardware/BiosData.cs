@@ -63,8 +63,8 @@ namespace OmenMon.Hardware.Bios {
             L7                = 49,  // 0x31 = 0b00110001 
             L3                = 64,  // 0x40 = 0b01000000
             Cool              = 80,  // 0x50 = 0b01010000
-            L4                = 80,  // 0x50 = 0b01010000
-            Eco               = 256  // 0x100 = Eco mode in OMEN Hub
+            L4                = 80   // 0x50 = 0b01010000
+            // Note: Eco mode (0x100 = 256) cannot be added as this enum is byte-sized (0-255)
         }
 
         // Fan type (per nibble)
