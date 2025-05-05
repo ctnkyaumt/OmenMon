@@ -1,5 +1,5 @@
   //\\   OmenMon: Hardware Monitoring & Control Utility
- //  \\  Copyright © 2023-2024 Piotr Szczepański * License: GPL3
+ //  \\  Copyright 2023-2024 Piotr Szczepański * License: GPL3
      //  https://omenmon.github.io/
 
 using System;
@@ -238,29 +238,27 @@ namespace OmenMon.AppGui {
         // Switches the fan mode
         private void EventActionFanMode(object sender, EventArgs e) {
 
-            // Retrieve the current fan mode
-            BiosData.FanMode fanModeNow = Context.Op.Platform.Fans.GetMode();
-
-            // Retrieve the requested fan mode
-            BiosData.FanMode fanModeAsk = (BiosData.FanMode) Enum.Parse(
-                typeof(BiosData.FanMode), 
+            // Parse the fan mode from the menu name
+            BiosData.FanMode fanMode = (BiosData.FanMode) Enum.Parse(
+                typeof(BiosData.FanMode),
                 ((ToolStripMenuItem) sender).Name.Remove(0, P_FAN_MODE.Length));
 
-            // Proceed only if the requested mode
-            // is different than the current one
-            if(fanModeAsk != fanModeNow) {
+            // Disable fan program first
+            Context.Op.Program.Terminate();
 
-                // Set the requested fan mode
-                Context.Op.Platform.Fans.SetMode(fanModeAsk);
+            // If max fan is active, disable it first
+            if(Context.Op.Platform.Fans.GetMax())
+                Context.Op.Platform.Fans.SetMax(false);
 
-                // Update the main form, if available
-                if(Context.FormMain != null)
-                    Context.FormMain.UpdateFanCtl();
+            // If the fan is off, turn it back on first
+            if(Context.Op.Platform.Fans.GetOff())
+                Context.Op.Platform.Fans.SetOff(false);
 
-                // Update the menu section
-                UpdateFan();
+            // Set the fan mode - use the enhanced release method to ensure proper Auto mode
+            Context.Op.Platform.Fans.ReleaseControlToWindows(fanMode);
 
-            }
+            // Update the menu section
+            UpdateFan();
 
         }
 
@@ -722,6 +720,7 @@ namespace OmenMon.AppGui {
             bool isFanMax = Context.Op.Platform.Fans.GetMax();
             bool isFanProg = Context.Op.Program.IsEnabled;
             bool isFanOff = Context.Op.Platform.Fans.GetOff();
+            bool isManualFan = Context.Op.Platform.Fans.GetManual();
 
             // Set the checked and enabled state on individual menu items
             ((ToolStripMenuItem) MenuFan.DropDownItems[I_FAN_MAX]).Checked = isFanMax;
@@ -740,21 +739,18 @@ namespace OmenMon.AppGui {
 
                 // Compare each entry to the current mode
                 string fanModeName = item.Name.Remove(0, P_FAN_MODE.Length);
-                if(fanModeName == fanModeNameNow) {
-
-                    // Mark as checked if the mode names are the same
+                
+                // Mark as checked if the mode names are the same AND we're not in manual mode
+                if(fanModeName == fanModeNameNow && !isManualFan) {
                     ((ToolStripMenuItem) item).Checked = true;
                     ((ToolStripMenuItem) item).Visible = true;
-
                 } else {
-
                     // Uncheck any other fan modes
                     ((ToolStripMenuItem) item).Checked = false;
 
                     // Hide legacy fan modes
                     if(fanModeName.StartsWith(X_FAN_MODE_LEGACY))
                         ((ToolStripMenuItem) item).Visible = false;
-
                 }
             }
 

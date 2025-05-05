@@ -371,7 +371,7 @@ namespace OmenMon.AppGui {
 
                 // Use the enhanced Auto mode switching for HP Victus compatibility
                 // This properly resets EC registers and ensures handover back to Auto control
-                Context.Op.Platform.Fans.SetAutoMode(fanModeAsk);
+                Context.Op.Platform.Fans.ReleaseControlToWindows(fanModeAsk);
 
             }
 

@@ -42,9 +42,8 @@ namespace OmenMon.Hardware.Platform {
         public bool GetOff();
         public void SetOff(bool flag);
 
-        // Sets the fan mode with special handling for proper Auto mode switching
-        // Ensures EC registers are properly reset for HP Victus compatibility
-        public void SetAutoMode(BiosData.FanMode mode);
+        // Adds a method to release fan control back to Windows ACPI
+        public void ReleaseControlToWindows(BiosData.FanMode mode = BiosData.FanMode.Default);
 
     }
 #endregion
@@ -184,52 +183,40 @@ namespace OmenMon.Hardware.Platform {
             // Note: WMI BIOS call preferred over this.Mode.SetValue((byte) mode);
         }
 
-        // Switches to Auto fan mode with the specified performance mode
-        public void SetAutoMode(BiosData.FanMode mode = BiosData.FanMode.Default) {
+        // Implementation of handover to Windows control via EC reset and BIOS defaults
+        public void ReleaseControlToWindows(BiosData.FanMode mode = BiosData.FanMode.Default) {
             try {
-                // First ensure max fan is off
+                // Disable max and manual overrides first 
                 this.SetMax(false);
-                
-                // Reset various EC registers to return control to Windows ACPI
-                Hw.Ec.Write(0x08, 0x0F);  // Critical register for auto mode operation
-                
-                // Ensure manual control is disabled
                 this.SetManual(false);
                 
-                // Reset fan control to allow Windows thermal policy to take over
-                Hw.Ec.Write(0xD5, 0x08);  // Important fan control register - enables thermal policy
-                
-                // Reset all fan speeds to 0 to let EC manage them
+                // Reset fan speeds to zero
                 Hw.Ec.Write(0xD0, 0x00);  // Reset CPU fan speed
                 Hw.Ec.Write(0xD2, 0x00);  // Reset GPU fan speed
                 
-                // Reset cooling policy according to mode
+                // Reset EC control registers to hand over to Windows ACPI
+                Hw.Ec.Write(0x08, 0x0F);  // Critical register for Auto mode
+                Hw.Ec.Write(0xD5, 0x08);  // Thermal policy control flag
+                
+                // Reset thermal policy according to mode
                 if (mode == BiosData.FanMode.Performance)
                     Hw.Ec.Write(0x09, 0x01);  // Performance thermal policy
                 else
                     Hw.Ec.Write(0x09, 0x00);  // Default thermal policy
                 
-                // Reset fan level registers through BIOS
-                this.SetLevels(new byte[] {0, 0});
-                
-                // Wait briefly between operations
-                System.Threading.Thread.Sleep(100);
-                
-                // Make the actual BIOS call to switch to Auto mode
-                // This will set the correct fan mode based on power mode (Default=48, Performance=49, etc.)
-                Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
+                // Make a BIOS call to explicitly set the mode
+                this.SetMode(mode);
                 
                 // Wait briefly to allow settings to take effect
                 System.Threading.Thread.Sleep(100);
                 
                 // Make a second BIOS call to ensure mode is set and persisted
-                Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
+                this.SetMode(mode);
                 
                 // Re-apply fan control flag to ensure Windows takes over
                 Hw.Ec.Write(0xD5, 0x08);
-            }
-            catch (Exception ex) {
-                // If anything fails, fall back to the standard fan mode setting
+            } catch {
+                // Fallback if EC writes fail
                 this.SetMode(mode);
             }
         }
