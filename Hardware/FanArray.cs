@@ -191,18 +191,18 @@ namespace OmenMon.Hardware.Platform {
                 this.SetManual(false);
                 
                 // Reset fan speeds to zero
-                Hw.Ec.Write(0xD0, 0x00);  // Reset CPU fan speed
-                Hw.Ec.Write(0xD2, 0x00);  // Reset GPU fan speed
+                Hw.EcSetByte(0xD0, 0x00);  // Reset CPU fan speed
+                Hw.EcSetByte(0xD2, 0x00);  // Reset GPU fan speed
                 
                 // Reset EC control registers to hand over to Windows ACPI
-                Hw.Ec.Write(0x08, 0x0F);  // Critical register for Auto mode
-                Hw.Ec.Write(0xD5, 0x08);  // Thermal policy control flag
+                Hw.EcSetByte(0x08, 0x0F);  // Critical register for Auto mode
+                Hw.EcSetByte(0xD5, 0x08);  // Thermal policy control flag
                 
                 // Reset thermal policy according to mode
                 if (mode == BiosData.FanMode.Performance)
-                    Hw.Ec.Write(0x09, 0x01);  // Performance thermal policy
+                    Hw.EcSetByte(0x09, 0x01);  // Performance thermal policy
                 else
-                    Hw.Ec.Write(0x09, 0x00);  // Default thermal policy
+                    Hw.EcSetByte(0x09, 0x00);  // Default thermal policy
                 
                 // Make a BIOS call to explicitly set the mode
                 this.SetMode(mode);
@@ -214,7 +214,7 @@ namespace OmenMon.Hardware.Platform {
                 this.SetMode(mode);
                 
                 // Re-apply fan control flag to ensure Windows takes over
-                Hw.Ec.Write(0xD5, 0x08);
+                Hw.EcSetByte(0xD5, 0x08);
             } catch {
                 // Fallback if EC writes fail
                 this.SetMode(mode);
