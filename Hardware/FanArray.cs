@@ -190,13 +190,15 @@ namespace OmenMon.Hardware.Platform {
                 this.SetMax(false);
                 this.SetManual(false);
                 
-                // Reset fan speeds to zero
-                Hw.EcSetByte(0xD0, 0x00);  // Reset CPU fan speed
-                Hw.EcSetByte(0xD2, 0x00);  // Reset GPU fan speed
+                // IMPORTANT: Do NOT reset fan speeds to zero, as this turns fans off completely
+                // Instead, configure the proper thermal control parameters
                 
                 // Reset EC control registers to hand over to Windows ACPI
                 Hw.EcSetByte(0x08, 0x0F);  // Critical register for Auto mode
-                Hw.EcSetByte(0xD5, 0x08);  // Thermal policy control flag
+                
+                // Set thermal control to auto (1) instead of manual (0)
+                // This matches the ThermalControl parameter in Omen Gaming Hub
+                Hw.EcSetByte(0xD5, 0x01);  // Enable auto thermal control
                 
                 // Reset thermal policy according to mode
                 if (mode == BiosData.FanMode.Performance)
@@ -213,8 +215,8 @@ namespace OmenMon.Hardware.Platform {
                 // Make a second BIOS call to ensure mode is set and persisted
                 this.SetMode(mode);
                 
-                // Re-apply fan control flag to ensure Windows takes over
-                Hw.EcSetByte(0xD5, 0x08);
+                // Re-apply thermal control flag to ensure auto mode is active
+                Hw.EcSetByte(0xD5, 0x01);
             } catch {
                 // Fallback if EC writes fail
                 this.SetMode(mode);
