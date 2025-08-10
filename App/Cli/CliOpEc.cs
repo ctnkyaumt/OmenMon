@@ -154,14 +154,18 @@ namespace OmenMon.AppCli {
 
             // Set up the data array
             var data = new EcMonData[byte.MaxValue];
+            bool hasSaved = false;
 
             // Create an event handler to break out of the perpetual loop
             Console.CancelKeyPress += (sender, eventArgs) => {
+                // Ensure we stop and save on Ctrl+C in all shells
+                eventArgs.Cancel = true;
                 IsStop = true;
 
-                // Save the report if filename was given
-                if(filename != null)
+                if(!hasSaved && filename != null) {
                     SaveEcReport(data, filename);
+                    hasSaved = true;
+                }
 
                 // Restore the console color to the original
                 Console.ForegroundColor = originalColor;
@@ -184,6 +188,15 @@ namespace OmenMon.AppCli {
 
             while(!IsStop) { // Continually keep adding new data
 
+                // Non-blocking keyboard exit (Esc or Q)
+                try {
+                    if(Console.KeyAvailable) {
+                        var key = Console.ReadKey(true).Key;
+                        if(key == ConsoleKey.Escape || key == ConsoleKey.Q)
+                            IsStop = true;
+                    }
+                } catch { }
+
                 for(int register = 0; register < data.Length; register++) 
                 if(!IsStop) {
 
@@ -199,6 +212,15 @@ namespace OmenMon.AppCli {
                 Thread.Sleep(Config.EcMonInterval); // at specified intervals
 
             }
+
+            // If we exited the loop without Ctrl+C, save the report here
+            if(!hasSaved && filename != null) {
+                try { SaveEcReport(data, filename); } catch { }
+            }
+
+            // Restore console color and close EC
+            Console.ForegroundColor = originalColor;
+            try { Hw.Ec.Close(); } catch { }
 
         }
 

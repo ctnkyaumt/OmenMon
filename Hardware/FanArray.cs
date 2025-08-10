@@ -73,7 +73,8 @@ namespace OmenMon.Hardware.Platform {
             IPlatformReadWriteComponent fanCountdown,
             IPlatformReadWriteComponent fanManual,
             IPlatformReadWriteComponent fanMode,
-            IPlatformReadWriteComponent fanSwitch) {
+            IPlatformReadWriteComponent fanSwitch,
+            bool isVictus = false) {
 
             // Initialize the fan array
             this.Fan = new IFan[PlatformData.FanCount];
@@ -96,7 +97,13 @@ namespace OmenMon.Hardware.Platform {
             // Define the switch component
             this.Switch = fanSwitch;
 
+            // Victus detection flag
+            this.IsVictus = isVictus;
+
         }
+
+        // True if platform is HP Victus (model-specific behavior)
+        private bool IsVictus;
 
         // Retrieves the countdown value [s]
         // until automatic settings are restored
@@ -152,30 +159,15 @@ namespace OmenMon.Hardware.Platform {
 
         // Retrieves the manual fan speed toggle status
         public bool GetManual() {
-            // Some models expose manual via OMCC (0x28), others via SFAN bit #1 (0xD0)
-            bool omccManual = this.Manual.GetValue() == (byte) PlatformData.FanManual.On;
-            try {
-                byte sfan = Hw.EcGetByte((byte) EmbeddedControllerData.Register.SFAN);
-                bool sfanManual = (sfan & 0x02) != 0; // Bit #1: Manual (constant)
-                return omccManual || sfanManual;
-            } catch {
-                return omccManual;
-            }
+            // Rely on OMCC (0x28) manual flag, which matches Victus behavior
+            return this.Manual.GetValue() == (byte) PlatformData.FanManual.On;
         }
 
         // Sets the manual fan speed toggle status
         public void SetManual(bool flag) {
-            // Update OMCC (0x28) first
+            // Update OMCC (0x28) only
             this.Manual.SetValue(flag ?
                 (byte) PlatformData.FanManual.On : (byte) PlatformData.FanManual.Off);
-
-            // Also reflect the state in SFAN (0xD0) bit #1 while preserving other bits
-            try {
-                byte sfan = Hw.EcGetByte((byte) EmbeddedControllerData.Register.SFAN);
-                byte newSfan = flag ? (byte) (sfan | 0x02) : (byte) (sfan & ~0x02);
-                if(newSfan != sfan)
-                    Hw.EcSetByte((byte) EmbeddedControllerData.Register.SFAN, newSfan);
-            } catch { }
         }
 
         // Retrieves the maximum fan speed status
@@ -196,6 +188,10 @@ namespace OmenMon.Hardware.Platform {
 
         // Sets the current fan mode
         public void SetMode(BiosData.FanMode mode) {
+            // Victus: ensure HPCM indicates non-Eco (0xFF) when setting built-in modes
+            if (this.IsVictus) {
+                try { Hw.EcSetByte((byte) EmbeddedControllerData.Register.HPCM, 0xFF); } catch { }
+            }
             Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
             // Note: WMI BIOS call preferred over this.Mode.SetValue((byte) mode);
         }
@@ -207,20 +203,9 @@ namespace OmenMon.Hardware.Platform {
                 this.SetMax(false);
                 this.SetManual(false);
 
-                // Clear Off/Manual/Max bits in SFAN (0xD0) to hand control back to Auto
-                // Bit #0: Off, #1: Manual, #2: Max
-                try {
-                    byte sfan = Hw.EcGetByte((byte) EmbeddedControllerData.Register.SFAN);
-                    byte cleared = (byte) (sfan & ~0x07);
-                    if(cleared != sfan)
-                        Hw.EcSetByte((byte) EmbeddedControllerData.Register.SFAN, cleared);
-                } catch { }
-
-                // For HP Victus ECs, writing 0xFF to PWM settings restores Auto
-                try {
-                    Hw.EcSetByte((byte) EmbeddedControllerData.Register.SRP1, 0xFF);
-                    Hw.EcSetByte((byte) EmbeddedControllerData.Register.SRP2, 0xFF);
-                } catch { }
+                // Victus: mark non-Eco via HPCM and restore Auto PWM via XSS
+                try { Hw.EcSetByte((byte) EmbeddedControllerData.Register.HPCM, 0xFF); } catch { }
+                // For HP Victus ECs, setting XSS registers to 0xFF restores Auto PWM control
                 try {
                     Hw.EcSetByte((byte) EmbeddedControllerData.Register.XSS1, 0xFF);
                     Hw.EcSetByte((byte) EmbeddedControllerData.Register.XSS2, 0xFF);

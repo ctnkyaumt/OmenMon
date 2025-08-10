@@ -109,7 +109,9 @@ namespace OmenMon.Hardware.Platform {
                         // Define the switch component
                         new EcComponent(
                             (byte) EmbeddedControllerData.Register.SFAN,
-                            PlatformData.AccessType.Read | PlatformData.AccessType.Write));
+                            PlatformData.AccessType.Read | PlatformData.AccessType.Write),
+                        // Victus detection (BaseBoard Product like 8BD4)
+                        isVictus: (this.System.GetProduct() ?? "").StartsWith("8BD", StringComparison.OrdinalIgnoreCase));
 
                     break;
 
