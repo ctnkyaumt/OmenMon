@@ -257,8 +257,14 @@ namespace OmenMon.AppCli {
                     if(!data[register].Show)
                         continue;
 
-                    // Otherwise, print out each in the header
-                    report.Append(Conv.GetString((byte) register, 2, 16));
+                    // Otherwise, print out each in the header with a known name if available
+                    string hex = Conv.GetString((byte) register, 2, 16);
+                    string name = null;
+                    try { name = Enum.GetName(typeof(EmbeddedControllerData.Register), (byte) register); } catch { }
+                    if(!string.IsNullOrEmpty(name))
+                        report.Append(hex + ":" + name);
+                    else
+                        report.Append(hex);
                     report.Append(" ");
                 }
 
