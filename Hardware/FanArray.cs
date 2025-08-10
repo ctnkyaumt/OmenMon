@@ -152,13 +152,30 @@ namespace OmenMon.Hardware.Platform {
 
         // Retrieves the manual fan speed toggle status
         public bool GetManual() {
-            return this.Manual.GetValue() == (byte) PlatformData.FanManual.On;
+            // Some models expose manual via OMCC (0x28), others via SFAN bit #1 (0xD0)
+            bool omccManual = this.Manual.GetValue() == (byte) PlatformData.FanManual.On;
+            try {
+                byte sfan = Hw.EcGetByte((byte) EmbeddedControllerData.Register.SFAN);
+                bool sfanManual = (sfan & 0x02) != 0; // Bit #1: Manual (constant)
+                return omccManual || sfanManual;
+            } catch {
+                return omccManual;
+            }
         }
 
         // Sets the manual fan speed toggle status
         public void SetManual(bool flag) {
+            // Update OMCC (0x28) first
             this.Manual.SetValue(flag ?
                 (byte) PlatformData.FanManual.On : (byte) PlatformData.FanManual.Off);
+
+            // Also reflect the state in SFAN (0xD0) bit #1 while preserving other bits
+            try {
+                byte sfan = Hw.EcGetByte((byte) EmbeddedControllerData.Register.SFAN);
+                byte newSfan = flag ? (byte) (sfan | 0x02) : (byte) (sfan & ~0x02);
+                if(newSfan != sfan)
+                    Hw.EcSetByte((byte) EmbeddedControllerData.Register.SFAN, newSfan);
+            } catch { }
         }
 
         // Retrieves the maximum fan speed status
@@ -183,40 +200,40 @@ namespace OmenMon.Hardware.Platform {
             // Note: WMI BIOS call preferred over this.Mode.SetValue((byte) mode);
         }
 
-        // Implementation of handover to Windows control via EC reset and BIOS defaults
+        // Implementation of handover to Windows control (Auto) via EC flags clear and BIOS defaults
         public void ReleaseControlToWindows(BiosData.FanMode mode = BiosData.FanMode.Default) {
             try {
-                // Disable max and manual overrides first 
+                // Disable overrides first
                 this.SetMax(false);
                 this.SetManual(false);
-                
-                // IMPORTANT: Do NOT reset fan speeds to zero, as this turns fans off completely
-                // Instead, configure the proper thermal control parameters
-                
-                // Reset EC control registers to hand over to Windows ACPI
-                Hw.EcSetByte(0x08, 0x0F);  // Critical register for Auto mode
-                
-                // Set thermal control to auto (1) instead of manual (0)
-                // This matches the ThermalControl parameter in Omen Gaming Hub
-                Hw.EcSetByte(0xD5, 0x01);  // Enable auto thermal control
-                
-                // Reset thermal policy according to mode
-                if (mode == BiosData.FanMode.Performance)
-                    Hw.EcSetByte(0x09, 0x01);  // Performance thermal policy
-                else
-                    Hw.EcSetByte(0x09, 0x00);  // Default thermal policy
-                
+
+                // Clear Off/Manual/Max bits in SFAN (0xD0) to hand control back to Auto
+                // Bit #0: Off, #1: Manual, #2: Max
+                try {
+                    byte sfan = Hw.EcGetByte((byte) EmbeddedControllerData.Register.SFAN);
+                    byte cleared = (byte) (sfan & ~0x07);
+                    if(cleared != sfan)
+                        Hw.EcSetByte((byte) EmbeddedControllerData.Register.SFAN, cleared);
+                } catch { }
+
+                // For HP Victus ECs, writing 0xFF to PWM settings restores Auto
+                try {
+                    Hw.EcSetByte((byte) EmbeddedControllerData.Register.SRP1, 0xFF);
+                    Hw.EcSetByte((byte) EmbeddedControllerData.Register.SRP2, 0xFF);
+                } catch { }
+                try {
+                    Hw.EcSetByte((byte) EmbeddedControllerData.Register.XSS1, 0xFF);
+                    Hw.EcSetByte((byte) EmbeddedControllerData.Register.XSS2, 0xFF);
+                } catch { }
+
                 // Make a BIOS call to explicitly set the mode
                 this.SetMode(mode);
-                
+
                 // Wait briefly to allow settings to take effect
                 System.Threading.Thread.Sleep(100);
-                
+
                 // Make a second BIOS call to ensure mode is set and persisted
                 this.SetMode(mode);
-                
-                // Re-apply thermal control flag to ensure auto mode is active
-                Hw.EcSetByte(0xD5, 0x01);
             } catch {
                 // Fallback if EC writes fail
                 this.SetMode(mode);
