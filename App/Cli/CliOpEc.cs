@@ -156,6 +156,18 @@ namespace OmenMon.AppCli {
             var data = new EcMonData[byte.MaxValue];
             bool hasSaved = false;
 
+            // Ensure output directory exists and inform user about controls
+            try {
+                if(!string.IsNullOrWhiteSpace(filename)) {
+                    string dir = Path.GetDirectoryName(filename);
+                    if(!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+                        Directory.CreateDirectory(dir);
+                    Cli.PrintColor((ConsoleColor) Cli.Color.Deemphasis, $"Saving EC monitor to: ");
+                    Console.WriteLine(filename);
+                }
+                Cli.PrintColor((ConsoleColor) Cli.Color.Deemphasis, "Press Esc or Q to stop and save. Ctrl+C also attempts to save.\n");
+            } catch { }
+
             // Create an event handler to break out of the perpetual loop
             Console.CancelKeyPress += (sender, eventArgs) => {
                 // Ensure we stop and save on Ctrl+C in all shells
@@ -209,6 +221,12 @@ namespace OmenMon.AppCli {
                 }
 
                 Cli.PrintEcReport(data); // Update the report
+                
+                // Periodically save to file so we don't lose data if Ctrl+C is swallowed
+                if(filename != null) {
+                    try { SaveEcReport(data, filename); hasSaved = true; } catch { }
+                }
+
                 Thread.Sleep(Config.EcMonInterval); // at specified intervals
 
             }
