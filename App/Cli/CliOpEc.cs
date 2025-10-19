@@ -170,19 +170,6 @@ namespace OmenMon.AppCli {
             Console.CancelKeyPress += (sender, eventArgs) => {
                 IsStop = true;
                 eventArgs.Cancel = true; // Prevent immediate termination
-
-                // Always save the report
-                SaveEcReport(data, filename);
-
-                // Restore the console color to the original
-                Console.ForegroundColor = originalColor;
-
-                // Close the Embedded Controller
-                Hw.Ec.Close();
-
-                // Exit the application
-                App.Exit();
-
             };
 
             // Populate the data array with initial readings
@@ -265,6 +252,9 @@ namespace OmenMon.AppCli {
             keyboardThreadRunning = false;
             keyboardThread.Join(500);
 
+            // Clear screen one last time before showing save message
+            Console.Clear();
+
             // Always save the report when exiting
             SaveEcReport(data, filename);
 
@@ -273,6 +263,10 @@ namespace OmenMon.AppCli {
 
             // Close the Embedded Controller
             Hw.Ec.Close();
+
+            // Wait for user to see the save message
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey(true);
 
         }
 
