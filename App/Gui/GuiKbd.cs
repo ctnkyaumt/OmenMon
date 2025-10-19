@@ -5,6 +5,7 @@
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.IO;
 using System.Windows.Forms;
 using OmenMon.Hardware.Bios;
 using OmenMon.Library;
@@ -214,6 +215,9 @@ namespace OmenMon.AppGui {
 
             // Set the color table
             Context.Op.Platform.System.SetKbdColor(new BiosData.ColorTable(ColorArray, true));
+
+            // Signal that user made a change (for EC monitor logging)
+            GuiOp.SignalUserChange();
 
         }
 #endregion

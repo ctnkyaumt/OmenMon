@@ -166,8 +166,10 @@ namespace OmenMon.AppGui {
             if(Kbd != null) // Use the keyboard class
                 Kbd.SetBacklight(!this.ChkKbdBacklight.Checked);
 
-            else // Fallback case for no customizable backlight color, only backlight toggle
+            else { // Fallback case for no customizable backlight color, only backlight toggle
                 Context.Op.Platform.System.SetKbdBacklight(!this.ChkKbdBacklight.Checked);
+                GuiOp.SignalUserChange();
+            }
 
             UpdateKbd();
         }

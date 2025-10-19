@@ -151,10 +151,15 @@ namespace OmenMon.AppGui {
                 // Update the main form
                 Context.FormMain.UpdateKbd();
 
-            } else
+            } else {
 
                 // Make a platform call otherwise
                 Context.Op.Platform.System.SetKbdBacklight(!((ToolStripMenuItem) sender).Checked);
+
+                // Signal user change
+                GuiOp.SignalUserChange();
+
+            }
 
             // Update the menu section
             UpdateKbdBacklight();
@@ -174,11 +179,16 @@ namespace OmenMon.AppGui {
                 // Update the main form
                 Context.FormMain.UpdateKbd();
 
-            } else
+            } else {
 
                 // Make a platform call otherwise
                 Context.Op.Platform.System.SetKbdColor(
                     Config.ColorPreset[((ToolStripMenuItem) sender).Name.Remove(0, P_KBD_COLOR_PRESET.Length)]);
+
+                // Signal user change
+                GuiOp.SignalUserChange();
+
+            }
 
             // Update the menu section
             UpdateKbdColorPreset();
@@ -211,6 +221,9 @@ namespace OmenMon.AppGui {
             // Toggle the maximum fan speed
             Context.Op.Platform.Fans.SetMax(!((ToolStripMenuItem) sender).Checked);
 
+            // Signal user change
+            GuiOp.SignalUserChange();
+
             // Update the main form, if available
             if(Context.FormMain != null)
                 Context.FormMain.UpdateFanCtl();
@@ -225,6 +238,9 @@ namespace OmenMon.AppGui {
 
             // Toggle the fan on or off
             Context.Op.Platform.Fans.SetOff(!((ToolStripMenuItem) sender).Checked);
+
+            // Signal user change
+            GuiOp.SignalUserChange();
 
             // Update the main form, if available
             if(Context.FormMain != null)
@@ -325,6 +341,9 @@ namespace OmenMon.AppGui {
                 // Set the requested GPU mode
                 Context.Op.Platform.System.SetGpuMode(gpuModeAsk);
 
+                // Signal user change
+                GuiOp.SignalUserChange();
+
                 // Update the menu section
                 UpdateGpuMode();
 
@@ -349,6 +368,9 @@ namespace OmenMon.AppGui {
 
             // Set the requested GPU power
             Context.Op.Platform.System.SetGpuPower(gpuPowerData);
+
+            // Signal user change
+            GuiOp.SignalUserChange();
 
             // Update the menu section
             UpdateGpuPower();

@@ -20,6 +20,7 @@ namespace OmenMon.AppCli {
         public struct EcMonData {
             public bool Show;
             public List<byte> Values;
+            public List<int> UserChangeIndex; // Track indices where user likely changed settings
         }
 
 #region Embedded Controller Information Retrieval
@@ -155,13 +156,23 @@ namespace OmenMon.AppCli {
             // Set up the data array
             var data = new EcMonData[byte.MaxValue];
 
+            // Generate default filename if not provided
+            if(filename == null) {
+                filename = "ecmon_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log";
+            }
+
+            // Ensure filename has proper path (same directory as executable if no path specified)
+            if(!Path.IsPathRooted(filename)) {
+                filename = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, filename);
+            }
+
             // Create an event handler to break out of the perpetual loop
             Console.CancelKeyPress += (sender, eventArgs) => {
                 IsStop = true;
+                eventArgs.Cancel = true; // Prevent immediate termination
 
-                // Save the report if filename was given
-                if(filename != null)
-                    SaveEcReport(data, filename);
+                // Always save the report
+                SaveEcReport(data, filename);
 
                 // Restore the console color to the original
                 Console.ForegroundColor = originalColor;
@@ -178,17 +189,67 @@ namespace OmenMon.AppCli {
             for(int register = 0; register < data.Length; register++) {
 
                 data[register].Values = new List<byte>();
+                data[register].UserChangeIndex = new List<int>();
                 data[register].Values.Add(Hw.EcGetByte((byte) register));
 
             }
 
+            // Start a background thread to check for keyboard input
+            bool keyboardThreadRunning = true;
+            Thread keyboardThread = new Thread(() => {
+                while(keyboardThreadRunning && !IsStop) {
+                    if(Console.KeyAvailable) {
+                        var key = Console.ReadKey(true);
+                        if(key.Key == ConsoleKey.Enter || key.Key == ConsoleKey.Escape) {
+                            IsStop = true;
+                            break;
+                        }
+                    }
+                    Thread.Sleep(50); // Check every 50ms
+                }
+            });
+            keyboardThread.Start();
+
+            // Track how many registers changed in this reading cycle
+            int readingIndex = 0;
+
+            // Path for the user change marker file
+            string markerFile = Path.Combine(Path.GetTempPath(), "OmenMon_UserChange.tmp");
+            DateTime lastMarkerCheck = DateTime.MinValue;
+
             while(!IsStop) { // Continually keep adding new data
+
+                readingIndex++;
+                int changesInThisCycle = 0;
+                bool userChangedSettings = false;
+
+                // Check if GUI/tray signaled a user change (check marker file)
+                if(File.Exists(markerFile)) {
+                    try {
+                        DateTime markerTime = File.GetLastWriteTime(markerFile);
+                        // If marker was updated since last check, user made a change
+                        if(markerTime > lastMarkerCheck) {
+                            userChangedSettings = true;
+                            lastMarkerCheck = markerTime;
+                        }
+                    } catch { }
+                }
 
                 for(int register = 0; register < data.Length; register++) 
                 if(!IsStop) {
 
                     byte value = Hw.EcGetByte((byte) register);
+                    byte previousValue = data[register].Values[data[register].Values.Count - 1];
+                    
                     data[register].Values.Add(value);
+
+                    if(value != previousValue) {
+                        changesInThisCycle++;
+                        // Mark this as a user change if flag is set
+                        if(userChangedSettings) {
+                            data[register].UserChangeIndex.Add(readingIndex);
+                        }
+                    }
 
                     if(value != data[register].Values[0])
                         data[register].Show = true; // Note the values that have changed
@@ -200,45 +261,77 @@ namespace OmenMon.AppCli {
 
             }
 
+            // Stop the keyboard thread
+            keyboardThreadRunning = false;
+            keyboardThread.Join(500);
+
+            // Always save the report when exiting
+            SaveEcReport(data, filename);
+
+            // Restore the console color to the original
+            Console.ForegroundColor = originalColor;
+
+            // Close the Embedded Controller
+            Hw.Ec.Close();
+
         }
 
         // Saves the embedded controller monitoring report to a file
+        // Format matches CLI display: register names on left, values in rows
         private static void SaveEcReport(EcMonData[] data, string filename) {
             try {
                 var report = new StringBuilder();
 
-                // Output the header
-                report.Append("#\\Reg  ");
+                // Add header with timestamp
+                report.AppendLine("OmenMon Embedded Controller Monitor Log");
+                report.AppendLine("Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                report.AppendLine();
 
-                // Iterate through the registers
+                // Iterate through all the registers
                 for(int register = 0; register < data.Length; register++) {
 
-                    // Skip those set not to be shown
+                    // Skip if set not to be shown
                     if(!data[register].Show)
                         continue;
 
-                    // Otherwise, print out each in the header
-                    report.Append(Conv.GetString((byte) register, 2, 16));
+                    // Output the register name, if available
+                    string registerName = Enum.GetName(typeof(EmbeddedControllerData.Register), register);
+                    if(registerName != null)
+                        report.Append(registerName.PadRight(4));
+                    else
+                        report.Append("    ");
+                    
                     report.Append(" ");
-                }
 
-                // Remove the superfluous trailing separator
-                report.Remove(report.Length - 1, 1);
-                report.AppendLine();
+                    // Output the register number
+                    report.Append(Conv.GetString((byte) register, 2));
+                    report.Append(" ");
 
-                // Output the values: iterate through data rows
-                for(int row = 0; row < data[0].Values.Count; row++) {
-                    // Print out sequential number
-                    report.Append(Conv.GetString((ushort) row, 5, 10));
-                    report.Append("  ");
-                    // Iterate through the registers
-                    for(int register = 0; register < data.Length; register++) {
-                        // Skip those set not to be shown
-                        if(!data[register].Show)
+                    // Used for comparison, since we only output the differences
+                    byte? lastValue = null;
+
+                    // Iterate through the readouts for each register
+                    for(int readNow = 0; readNow < data[register].Values.Count; readNow++) {
+                        // Do not output the value if it is the same as before
+                        if(data[register].Values[readNow] == lastValue) {
+                            report.Append(" ..");
                             continue;
-                        // Otherwise, print out the value from each
-                        report.Append(Conv.GetString(data[register].Values[row], 2, 16));
-                        report.Append(" ");
+                        }
+
+                        // Update the last value to current value
+                        lastValue = data[register].Values[readNow];
+
+                        // Output a separator between values
+                        if(readNow > 0)
+                            report.Append(" ");
+
+                        // Print out the current value
+                        report.Append(Conv.GetString(data[register].Values[readNow], 2, 16));
+
+                        // Add change indicator (C) if this reading was marked as a user change
+                        if(data[register].UserChangeIndex.Contains(readNow)) {
+                            report.Append("(C)");
+                        }
                     }
                     report.AppendLine();
                 }
@@ -246,10 +339,15 @@ namespace OmenMon.AppCli {
                 // Save the report to a file
                 File.WriteAllText(filename, report.ToString());
 
-            } catch {
+                // Notify user of successful save
+                Console.WriteLine();
+                Console.WriteLine("Log saved to: " + filename);
+
+            } catch(Exception ex) {
 
                 // Report an error if the file could not be saved
-                App.Error("ErrFileSave");
+                Console.WriteLine();
+                Console.WriteLine("Error saving log file: " + ex.Message);
             }
         }
 #endregion
