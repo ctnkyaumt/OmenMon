@@ -177,8 +177,17 @@ namespace OmenMon.Hardware.Platform {
 
         // Sets the current fan mode
         public void SetMode(BiosData.FanMode mode) {
-            Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
-            // Note: WMI BIOS call preferred over this.Mode.SetValue((byte) mode);
+            try {
+                // Try BIOS WMI call first (works on older systems)
+                Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
+            } catch {
+                // BIOS call may fail on newer systems
+            }
+            
+            // Also write directly to EC register (works on Victus 16 and newer)
+            // This ensures the mode is set even if BIOS call doesn't work
+            this.Mode.SetValue((byte) mode);
+            this.Mode.Update();
         }
 
         // Retrieves the fan off switch status

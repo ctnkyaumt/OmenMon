@@ -46,28 +46,36 @@ namespace OmenMon.Hardware.Bios {
         // Fan performance mode
         // Source: HP.Omen.Core.Common.PowerControl.PerformanceMode
         // Updated with modern HP Omen Gaming Hub modes for Victus and newer systems
+        // EC Register 0x06 values observed on Victus 16: 0x08=Balanced, 0x48=Performance
         public enum FanMode : byte {
+            // Legacy BIOS-based modes (older systems)
             LegacyDefault     =  0,  // 0x00 = 0b00000000
             LegacyPerformance =  1,  // 0x01 = 0b00000001
             LegacyCool        =  2,  // 0x02 = 0b00000010
             LegacyQuiet       =  3,  // 0x03 = 0b00000011
             LegacyExtreme     =  4,  // 0x04 = 0b00000100
             L8                =  4,  // 0x04 = 0b00000100
+            
+            // Modern EC-based modes (Victus 16 and newer)
+            // Bit 6 (0x40) = Performance boost flag
+            // Base value 0x08 = Balanced mode
+            Eco               =  8,  // 0x08 = 0b00001000 - Quiet/Eco mode (modern HP Omen Gaming Hub)
+            Quiet             =  8,  // 0x08 = 0b00001000 - Alias for Eco
+            Default           =  8,  // 0x08 = 0b00001000 - Default/Balanced mode
+            Balance           =  8,  // 0x08 = 0b00001000 - Balanced mode (modern HP Omen Gaming Hub)
+            Normal            =  8,  // 0x08 = 0b00001000 - Alias for Balance
+            Performance       = 72,  // 0x48 = 0b01001000 - Performance mode (0x08 | 0x40)
+            Turbo             = 72,  // 0x48 = 0b01001000 - Alias for Performance (modern HP Omen Gaming Hub)
+            
+            // Legacy intermediate levels (older systems)
             L0                = 16,  // 0x10 = 0b00010000
             L5                = 17,  // 0x11 = 0b00010001
             L1                = 32,  // 0x20 = 0b00100000
             L6                = 33,  // 0x21 = 0b00100001
-            Default           = 48,  // 0x30 = 0b00110000 - Also "Balance" or "Normal" on modern systems
-            Balance           = 48,  // 0x30 = 0b00110000 - Alias for Default (modern HP Omen Gaming Hub)
-            Normal            = 48,  // 0x30 = 0b00110000 - Alias for Default
             L2                = 48,  // 0x30 = 0b00110000
-            Performance       = 49,  // 0x31 = 0b00110001 - Also "Turbo" on modern systems
-            Turbo             = 49,  // 0x31 = 0b00110001 - Alias for Performance (modern HP Omen Gaming Hub)
             L7                = 49,  // 0x31 = 0b00110001 
             L3                = 64,  // 0x40 = 0b01000000
             Cool              = 80,  // 0x50 = 0b01010000
-            Quiet             = 80,  // 0x50 = 0b01010000 - Alias for Cool (modern HP Omen Gaming Hub "Eco" mode)
-            Eco               = 80,  // 0x50 = 0b01010000 - Alias for Cool (modern HP Omen Gaming Hub)
             L4                = 80   // 0x50 = 0b01010000
         }
 

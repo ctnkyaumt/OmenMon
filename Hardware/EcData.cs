@@ -54,11 +54,13 @@ namespace OmenMon.Hardware.Ec {
             // R0x02: Unknown
             VOFS = 0x02,  // Version Offset?
 
+            // R0x06: HP Cooling Mode (Performance Mode) - Victus and newer systems
+            HPCM = 0x06,  // HP Cooling Mode: 0x08=Balanced, 0x48=Performance, bit 6 indicates mode
+
             // R0x10: Unknown
             PRTS = 0x10,  // (Value 0x9)
 
-            // R0x18: Flag Byte for Current Settings
-            // Note: HPCM moved to 0x95 on newer systems
+            // R0x18: Flag Byte for Current Settings (older systems)
 
             // R0x20: Main Embedded Controller Flags
             AUDI = 0x20,  // Bit #2: MUTE, #6: OMEN Audio?
@@ -110,9 +112,6 @@ namespace OmenMon.Hardware.Ec {
             XSS1 = 0x90,  // Fan Speed Setting: 1 (CPU)
             XSS2 = 0x91,  // Fan Speed Setting: 2 (GPU)
             XSS3 = 0x92,  // Fan Speed Setting: 3 (possibly unused)
-
-            // R0x95: HP Cooling Mode (Performance Mode)
-            HPCM = 0x95,  // HP Cooling Mode register (modern systems)
 
             // R0x98-0x9A: Fan Rate Bytes (Current)
             XGS1 = 0x98,  // Fan Speed Global: 1 (CPU) [%]
