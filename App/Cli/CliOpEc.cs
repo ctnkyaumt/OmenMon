@@ -181,6 +181,12 @@ namespace OmenMon.AppCli {
 
             }
 
+            // Display instructions
+            Console.WriteLine("Monitoring Embedded Controller...");
+            Console.WriteLine("Press Ctrl+C, Enter, or Esc to stop and save log.");
+            Console.WriteLine();
+            Thread.Sleep(2000); // Give user time to read
+
             // Start a background thread to check for keyboard input
             bool keyboardThreadRunning = true;
             Thread keyboardThread = new Thread(() => {
@@ -195,6 +201,7 @@ namespace OmenMon.AppCli {
                     Thread.Sleep(50); // Check every 50ms
                 }
             });
+            keyboardThread.IsBackground = true;
             keyboardThread.Start();
 
             // Track how many registers changed in this reading cycle
@@ -222,8 +229,9 @@ namespace OmenMon.AppCli {
                     } catch { }
                 }
 
-                for(int register = 0; register < data.Length; register++) 
-                if(!IsStop) {
+                for(int register = 0; register < data.Length; register++) {
+                    if(IsStop)
+                        break;
 
                     byte value = Hw.EcGetByte((byte) register);
                     byte previousValue = data[register].Values[data[register].Values.Count - 1];
@@ -240,7 +248,6 @@ namespace OmenMon.AppCli {
 
                     if(value != data[register].Values[0])
                         data[register].Show = true; // Note the values that have changed
-
                 }
 
                 Cli.PrintEcReport(data); // Update the report
@@ -254,6 +261,11 @@ namespace OmenMon.AppCli {
 
             // Clear screen one last time before showing save message
             Console.Clear();
+
+            // Show that we're stopping
+            Console.WriteLine("Stopping monitor...");
+            Console.WriteLine("Saving log file to: " + filename);
+            Console.WriteLine();
 
             // Always save the report when exiting
             SaveEcReport(data, filename);
@@ -274,6 +286,7 @@ namespace OmenMon.AppCli {
         // Format matches CLI display: register names on left, values in rows
         private static void SaveEcReport(EcMonData[] data, string filename) {
             try {
+                Console.WriteLine("Building report...");
                 var report = new StringBuilder();
 
                 // Add header with timestamp
@@ -331,11 +344,20 @@ namespace OmenMon.AppCli {
                 }
 
                 // Save the report to a file
-                File.WriteAllText(filename, report.ToString());
+                string reportContent = report.ToString();
+                Console.WriteLine("Writing " + reportContent.Length + " bytes to file...");
+                File.WriteAllText(filename, reportContent);
 
-                // Notify user of successful save
-                Console.WriteLine();
-                Console.WriteLine("Log saved to: " + filename);
+                // Verify file was created
+                if(File.Exists(filename)) {
+                    FileInfo fi = new FileInfo(filename);
+                    Console.WriteLine();
+                    Console.WriteLine("SUCCESS: Log saved to: " + filename);
+                    Console.WriteLine("File size: " + fi.Length + " bytes");
+                } else {
+                    Console.WriteLine();
+                    Console.WriteLine("WARNING: File.WriteAllText completed but file not found!");
+                }
 
             } catch(Exception ex) {
 
