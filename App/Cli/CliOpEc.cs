@@ -160,16 +160,19 @@ namespace OmenMon.AppCli {
             if(filename == null) {
                 filename = "ecmon_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log";
             }
-
-            // Ensure filename has proper path (same directory as executable if no path specified)
-            if(!Path.IsPathRooted(filename)) {
-                filename = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, filename);
-            }
+            // Use current working directory for relative paths (do not rewrite)
 
             // Create an event handler to break out of the perpetual loop
             Console.CancelKeyPress += (sender, eventArgs) => {
                 IsStop = true;
-                eventArgs.Cancel = true; // Prevent immediate termination
+                eventArgs.Cancel = true;
+            };
+
+            // Failsafe: on process exit, try to save if not already saved
+            bool saved = false;
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => {
+                if(saved) return;
+                try { if(filename != null) SaveEcReport(data, filename); } catch { }
             };
 
             // Populate the data array with initial readings
@@ -187,33 +190,56 @@ namespace OmenMon.AppCli {
             Console.WriteLine();
             Thread.Sleep(2000); // Give user time to read
 
-            // Start a background thread to check for keyboard input
-            bool keyboardThreadRunning = true;
-            Thread keyboardThread = new Thread(() => {
-                while(keyboardThreadRunning && !IsStop) {
-                    if(Console.KeyAvailable) {
-                        var key = Console.ReadKey(true);
-                        if(key.Key == ConsoleKey.Enter || key.Key == ConsoleKey.Escape) {
-                            IsStop = true;
-                            break;
+            // Start a background thread that waits for Enter (robust across consoles)
+            bool inputThreadRunning = true;
+            Thread inputThread = new Thread(() => {
+                try {
+                    Console.ReadLine(); // Blocks until Enter is pressed
+                } catch { }
+                if(inputThreadRunning)
+                    IsStop = true;
+            });
+            inputThread.IsBackground = true;
+            inputThread.Start();
+
+            // Start a secondary key polling thread to capture Esc/Enter
+            bool keyThreadRunning = true;
+            Thread keyThread = new Thread(() => {
+                while(keyThreadRunning && !IsStop) {
+                    try {
+                        if(Console.KeyAvailable) {
+                            var key = Console.ReadKey(true);
+                            if(key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.Enter) {
+                                IsStop = true;
+                                break;
+                            }
                         }
-                    }
-                    Thread.Sleep(50); // Check every 50ms
+                    } catch { }
+                    Thread.Sleep(50);
                 }
             });
-            keyboardThread.IsBackground = true;
-            keyboardThread.Start();
+            keyThread.IsBackground = true;
+            keyThread.Start();
 
             // Track how many registers changed in this reading cycle
             int readingIndex = 0;
 
             // Path for the user change marker file
             string markerFile = Path.Combine(Path.GetTempPath(), "OmenMon_UserChange.tmp");
+            // Path for a stop marker file (external way to stop)
+            string stopFile = Path.Combine(Path.GetTempPath(), "OmenMon_EcMon_Stop.tmp");
             DateTime lastMarkerCheck = DateTime.MinValue;
 
             while(!IsStop) { // Continually keep adding new data
 
                 readingIndex++;
+
+                // Stop via external marker
+                if(File.Exists(stopFile)) {
+                    try { File.Delete(stopFile); } catch { }
+                    IsStop = true;
+                    break;
+                }
                 int changesInThisCycle = 0;
                 bool userChangedSettings = false;
 
@@ -255,20 +281,27 @@ namespace OmenMon.AppCli {
 
             }
 
-            // Stop the keyboard thread
-            keyboardThreadRunning = false;
-            keyboardThread.Join(500);
+            // Stop the input thread
+            inputThreadRunning = false;
+            try { inputThread.Join(500); } catch { }
+            // Stop the key polling thread
+            keyThreadRunning = false;
+            try { keyThread.Join(200); } catch { }
 
             // Clear screen one last time before showing save message
             Console.Clear();
 
             // Show that we're stopping
             Console.WriteLine("Stopping monitor...");
-            Console.WriteLine("Saving log file to: " + filename);
-            Console.WriteLine();
-
-            // Always save the report when exiting
-            SaveEcReport(data, filename);
+            if(filename != null) {
+                Console.WriteLine("Saving log file to: " + filename);
+                Console.WriteLine();
+                // Save the report when exiting only if a filename was specified
+                SaveEcReport(data, filename);
+                saved = true;
+            } else {
+                Console.WriteLine("No filename specified. Skipping save as per documentation.");
+            }
 
             // Restore the console color to the original
             Console.ForegroundColor = originalColor;
@@ -276,94 +309,51 @@ namespace OmenMon.AppCli {
             // Close the Embedded Controller
             Hw.Ec.Close();
 
-            // Wait for user to see the save message
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey(true);
+            // Return to caller
 
         }
 
         // Saves the embedded controller monitoring report to a file
-        // Format matches CLI display: register names on left, values in rows
+        // Format matches documentation (#\Reg header, columns: registers; rows: time steps)
         private static void SaveEcReport(EcMonData[] data, string filename) {
             try {
-                Console.WriteLine("Building report...");
                 var report = new StringBuilder();
 
-                // Add header with timestamp
-                report.AppendLine("OmenMon Embedded Controller Monitor Log");
-                report.AppendLine("Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                report.AppendLine();
-
-                // Iterate through all the registers
+                // Header
+                report.Append("#\\Reg  ");
                 for(int register = 0; register < data.Length; register++) {
-
-                    // Skip if set not to be shown
                     if(!data[register].Show)
                         continue;
-
-                    // Output the register name, if available
-                    string registerName = Enum.GetName(typeof(EmbeddedControllerData.Register), register);
-                    if(registerName != null)
-                        report.Append(registerName.PadRight(4));
-                    else
-                        report.Append("    ");
-                    
+                    report.Append(Conv.GetString((byte) register, 2, 16));
                     report.Append(" ");
+                }
+                if(report[report.Length - 1] == ' ')
+                    report.Remove(report.Length - 1, 1);
+                report.AppendLine();
 
-                    // Output the register number
-                    report.Append(Conv.GetString((byte) register, 2));
-                    report.Append(" ");
-
-                    // Used for comparison, since we only output the differences
-                    byte? lastValue = null;
-
-                    // Iterate through the readouts for each register
-                    for(int readNow = 0; readNow < data[register].Values.Count; readNow++) {
-                        // Do not output the value if it is the same as before
-                        if(data[register].Values[readNow] == lastValue) {
-                            report.Append(" ..");
+                // Rows: nnnnn (time step) followed by values for shown registers
+                int rows = data[0].Values.Count;
+                for(int row = 0; row < rows; row++) {
+                    report.Append(Conv.GetString((ushort) row, 5, 10));
+                    report.Append("  ");
+                    for(int register = 0; register < data.Length; register++) {
+                        if(!data[register].Show)
                             continue;
-                        }
-
-                        // Update the last value to current value
-                        lastValue = data[register].Values[readNow];
-
-                        // Output a separator between values
-                        if(readNow > 0)
-                            report.Append(" ");
-
-                        // Print out the current value
-                        report.Append(Conv.GetString(data[register].Values[readNow], 2, 16));
-
-                        // Add change indicator (C) if this reading was marked as a user change
-                        if(data[register].UserChangeIndex.Contains(readNow)) {
+                        report.Append(Conv.GetString(data[register].Values[row], 2, 16));
+                        // Mark user-initiated change on this time step
+                        if(data[register].UserChangeIndex != null && data[register].UserChangeIndex.Contains(row))
                             report.Append("(C)");
-                        }
+                        report.Append(" ");
                     }
+                    if(report[report.Length - 1] == ' ')
+                        report.Remove(report.Length - 1, 1);
                     report.AppendLine();
                 }
 
-                // Save the report to a file
-                string reportContent = report.ToString();
-                Console.WriteLine("Writing " + reportContent.Length + " bytes to file...");
-                File.WriteAllText(filename, reportContent);
-
-                // Verify file was created
-                if(File.Exists(filename)) {
-                    FileInfo fi = new FileInfo(filename);
-                    Console.WriteLine();
-                    Console.WriteLine("SUCCESS: Log saved to: " + filename);
-                    Console.WriteLine("File size: " + fi.Length + " bytes");
-                } else {
-                    Console.WriteLine();
-                    Console.WriteLine("WARNING: File.WriteAllText completed but file not found!");
-                }
-
-            } catch(Exception ex) {
-
-                // Report an error if the file could not be saved
-                Console.WriteLine();
-                Console.WriteLine("Error saving log file: " + ex.Message);
+                // Write file (relative paths resolve to current working directory)
+                File.WriteAllText(filename, report.ToString());
+            } catch {
+                App.Error("ErrFileSave");
             }
         }
 #endregion
