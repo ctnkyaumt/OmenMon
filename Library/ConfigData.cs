@@ -90,8 +90,9 @@ namespace OmenMon.Library {
         public static bool FanLevelUseEc = false;
 
         // Fan modes that should always be placed on top of the list
+        // Modern systems (Victus, 2023+ Omen) use: Eco (Quiet), Balance (Normal), Performance (Turbo)
         // (the rest are legacy modes, irrelevant but kept for completeness)
-        public static List<string> FanModesSticky = new List<string> { "Default", "Performance", "Cool" };
+        public static List<string> FanModesSticky = new List<string> { "Eco", "Balance", "Performance", "Quiet", "Normal", "Turbo", "Default", "Cool" };
 
         // Fan programs (populated at runtime)
         public static SortedList<string, FanProgramData> FanProgram =

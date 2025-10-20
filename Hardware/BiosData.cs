@@ -45,6 +45,7 @@ namespace OmenMon.Hardware.Bios {
 
         // Fan performance mode
         // Source: HP.Omen.Core.Common.PowerControl.PerformanceMode
+        // Updated with modern HP Omen Gaming Hub modes for Victus and newer systems
         public enum FanMode : byte {
             LegacyDefault     =  0,  // 0x00 = 0b00000000
             LegacyPerformance =  1,  // 0x01 = 0b00000001
@@ -56,12 +57,17 @@ namespace OmenMon.Hardware.Bios {
             L5                = 17,  // 0x11 = 0b00010001
             L1                = 32,  // 0x20 = 0b00100000
             L6                = 33,  // 0x21 = 0b00100001
-            Default           = 48,  // 0x30 = 0b00110000
+            Default           = 48,  // 0x30 = 0b00110000 - Also "Balance" or "Normal" on modern systems
+            Balance           = 48,  // 0x30 = 0b00110000 - Alias for Default (modern HP Omen Gaming Hub)
+            Normal            = 48,  // 0x30 = 0b00110000 - Alias for Default
             L2                = 48,  // 0x30 = 0b00110000
-            Performance       = 49,  // 0x31 = 0b00110001 
+            Performance       = 49,  // 0x31 = 0b00110001 - Also "Turbo" on modern systems
+            Turbo             = 49,  // 0x31 = 0b00110001 - Alias for Performance (modern HP Omen Gaming Hub)
             L7                = 49,  // 0x31 = 0b00110001 
             L3                = 64,  // 0x40 = 0b01000000
             Cool              = 80,  // 0x50 = 0b01010000
+            Quiet             = 80,  // 0x50 = 0b01010000 - Alias for Cool (modern HP Omen Gaming Hub "Eco" mode)
+            Eco               = 80,  // 0x50 = 0b01010000 - Alias for Cool (modern HP Omen Gaming Hub)
             L4                = 80   // 0x50 = 0b01010000
         }
 
