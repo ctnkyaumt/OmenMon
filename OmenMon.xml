@@ -142,22 +142,22 @@
             <Program Name="Silent">
                 <FanMode>Default</FanMode>
                 <GpuPower>Minimum</GpuPower>
+                <!-- 0-51°C: Fanlar kapalı -->
                 <Level Temperature="00"><Cpu>00</Cpu><Gpu>00</Gpu></Level>
-                <Level Temperature="40"><Cpu>20</Cpu><Gpu>20</Gpu></Level>
-                <Level Temperature="45"><Cpu>22</Cpu><Gpu>22</Gpu></Level>
-                <Level Temperature="50"><Cpu>24</Cpu><Gpu>24</Gpu></Level>
-                <Level Temperature="53"><Cpu>26</Cpu><Gpu>26</Gpu></Level>
-                <Level Temperature="56"><Cpu>28</Cpu><Gpu>28</Gpu></Level>
-                <Level Temperature="59"><Cpu>30</Cpu><Gpu>30</Gpu></Level>
-                <Level Temperature="62"><Cpu>33</Cpu><Gpu>33</Gpu></Level>
-                <Level Temperature="65"><Cpu>36</Cpu><Gpu>36</Gpu></Level>
-                <Level Temperature="68"><Cpu>39</Cpu><Gpu>39</Gpu></Level>
-                <Level Temperature="71"><Cpu>42</Cpu><Gpu>42</Gpu></Level>
-                <Level Temperature="74"><Cpu>46</Cpu><Gpu>46</Gpu></Level>
-                <Level Temperature="77"><Cpu>50</Cpu><Gpu>50</Gpu></Level>
-                <Level Temperature="80"><Cpu>53</Cpu><Gpu>53</Gpu></Level>
-                <Level Temperature="83"><Cpu>55</Cpu><Gpu>55</Gpu></Level>
-                <Level Temperature="86"><Cpu>57</Cpu><Gpu>57</Gpu></Level>
+                <!-- 52°C: 1000 RPM ile başlangıç -->
+                <Level Temperature="52"><Cpu>10</Cpu><Gpu>10</Gpu></Level>
+                <Level Temperature="55"><Cpu>15</Cpu><Gpu>15</Gpu></Level>
+                <Level Temperature="58"><Cpu>20</Cpu><Gpu>20</Gpu></Level>
+                <Level Temperature="61"><Cpu>24</Cpu><Gpu>24</Gpu></Level>
+                <Level Temperature="64"><Cpu>28</Cpu><Gpu>28</Gpu></Level>
+                <Level Temperature="67"><Cpu>32</Cpu><Gpu>32</Gpu></Level>
+                <Level Temperature="70"><Cpu>36</Cpu><Gpu>36</Gpu></Level>
+                <Level Temperature="73"><Cpu>40</Cpu><Gpu>40</Gpu></Level>
+                <Level Temperature="76"><Cpu>44</Cpu><Gpu>44</Gpu></Level>
+                <Level Temperature="79"><Cpu>48</Cpu><Gpu>48</Gpu></Level>
+                <Level Temperature="82"><Cpu>52</Cpu><Gpu>52</Gpu></Level>
+                <Level Temperature="85"><Cpu>55</Cpu><Gpu>55</Gpu></Level>
+                <Level Temperature="88"><Cpu>57</Cpu><Gpu>57</Gpu></Level>
             </Program>
         </FanPrograms>
 
