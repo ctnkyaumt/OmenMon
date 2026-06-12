@@ -374,6 +374,9 @@ namespace OmenMon.AppGui {
                 // Set the levels to 0xFF to clear any custom speed settings
                 Context.Op.Platform.Fans.SetLevels(new byte[] {Byte.MaxValue, Byte.MaxValue});
 
+                // Clear manual fan control flag to restore automatic thermal management
+                Context.Op.Platform.Fans.SetManual(false);
+
                 // Enable automatic fan in the selected mode
                 Context.Op.Platform.Fans.SetMode(fanModeAsk);
 

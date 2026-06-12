@@ -154,7 +154,7 @@ namespace OmenMon.AppCli {
             ConsoleColor originalColor = Console.ForegroundColor;
 
             // Set up the data array
-            var data = new EcMonData[byte.MaxValue];
+            var data = new EcMonData[256];
 
             // Generate default filename if not provided
             if(filename == null) {
@@ -293,15 +293,11 @@ namespace OmenMon.AppCli {
 
             // Show that we're stopping
             Console.WriteLine("Stopping monitor...");
-            if(filename != null) {
-                Console.WriteLine("Saving log file to: " + filename);
-                Console.WriteLine();
-                // Save the report when exiting only if a filename was specified
-                SaveEcReport(data, filename);
-                saved = true;
-            } else {
-                Console.WriteLine("No filename specified. Skipping save as per documentation.");
-            }
+            Console.WriteLine("Saving log file to: " + filename);
+            Console.WriteLine();
+            // Save the report when exiting
+            SaveEcReport(data, filename);
+            saved = true;
 
             // Restore the console color to the original
             Console.ForegroundColor = originalColor;
@@ -334,19 +330,27 @@ namespace OmenMon.AppCli {
                 // Rows: nnnnn (time step) followed by values for shown registers
                 int rows = data[0].Values.Count;
                 for(int row = 0; row < rows; row++) {
-                    report.Append(Conv.GetString((ushort) row, 5, 10));
+                    report.Append(Conv.GetString((uint) row, 5, 10));
                     report.Append("  ");
+                    var userChanges = new List<string>();
                     for(int register = 0; register < data.Length; register++) {
                         if(!data[register].Show)
                             continue;
                         report.Append(Conv.GetString(data[register].Values[row], 2, 16));
-                        // Mark user-initiated change on this time step
+                        // Record user-initiated change on this time step for later
                         if(data[register].UserChangeIndex != null && data[register].UserChangeIndex.Contains(row))
-                            report.Append("(C)");
+                            userChanges.Add(Conv.GetString((byte)register, 2, 16));
                         report.Append(" ");
                     }
                     if(report[report.Length - 1] == ' ')
                         report.Remove(report.Length - 1, 1);
+
+                    // Append user changes as a comment to preserve column alignment
+                    if(userChanges.Count > 0) {
+                        report.Append("  // User change: ");
+                        report.Append(string.Join(", ", userChanges));
+                    }
+
                     report.AppendLine();
                 }
 
