@@ -359,22 +359,31 @@ namespace OmenMon.AppGui {
                 // Terminate any running fan program
                 Context.Op.Program.Terminate();
 
-                // Query the requested mode from dropdown
-                BiosData.FanMode fanModeAsk = (BiosData.FanMode) Enum.Parse(
-                    typeof(BiosData.FanMode), 
-                    (string) this.CmbFanMode.SelectedValue);
+                try {
+                    // Parse the requested mode from the dropdown
+                    BiosData.FanMode fanModeAsk = BiosData.FanMode.Default;
+                    try {
+                        fanModeAsk = (BiosData.FanMode) Enum.Parse(
+                            typeof(BiosData.FanMode),
+                            (string) this.CmbFanMode.SelectedValue);
+                    } catch {
+                        // If parsing fails, fall back to Default
+                    }
 
-                // Always re-enable fan (undo Off state unconditionally)
-                // EC reads for Off state are unreliable on some models
-                Context.Op.Platform.Fans.SetOff(false);
+                    // Disable maximum fan speed if it was active
+                    try { Context.Op.Platform.Fans.SetMax(false); } catch { }
 
-                // Always disable maximum speed (undo Max state unconditionally)
-                Context.Op.Platform.Fans.SetMax(false);
+                    // Clear the fan off state (resets cached off flag)
+                    Context.Op.Platform.Fans.SetOff(false);
 
-                // Enable automatic fan in the selected mode
-                // The BIOS SetFanMode call tells the firmware to resume
-                // automatic thermal management, which overrides any custom levels
-                Context.Op.Platform.Fans.SetMode(fanModeAsk);
+                    // Disable trackbars (clear constant-speed mode)
+                    this.TrkFan0Lvl.Enabled = false;
+                    this.TrkFan1Lvl.Enabled = false;
+
+                    // Set the fan mode via BIOS WMI
+                    // This single call is proven to work from CLI
+                    Context.Op.Platform.Fans.SetMode(fanModeAsk);
+                } catch { }
 
             }
 

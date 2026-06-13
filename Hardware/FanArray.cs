@@ -69,6 +69,10 @@ namespace OmenMon.Hardware.Platform {
         // Used as a fallback when the EC mode register returns invalid values
         protected BiosData.FanMode? LastSetMode = null;
 
+        // Caches the fan off state set by the application
+        // Used when the EC fan switch register returns unreliable values
+        protected bool LastSetOff = false;
+
         // Constructs a fan array instance
         public FanArray(
             IFan[] fan,
@@ -218,12 +222,17 @@ namespace OmenMon.Hardware.Platform {
 
         // Retrieves the fan off switch status
         public bool GetOff() {
-            this.Switch.Update();
-            return ((PlatformData.FanSwitch) this.Switch.GetValue()) == PlatformData.FanSwitch.Off;
+            if(Config.FanLevelUseEc) {
+                this.Switch.Update();
+                return ((PlatformData.FanSwitch) this.Switch.GetValue()) == PlatformData.FanSwitch.Off;
+            }
+            // When EC registers are unreliable, use cached state
+            return LastSetOff;
         }
 
         // Switches the fan off or back on
         public void SetOff(bool flag) {
+            LastSetOff = flag;
             if(Config.FanLevelUseEc) {
                 // Use EC register to switch fans off/on
                 this.Switch.SetValue(flag ?
