@@ -65,6 +65,10 @@ namespace OmenMon.Hardware.Platform {
         // Stores the fan on and off switch component
         protected IPlatformReadWriteComponent Switch;
 
+        // Caches the last fan mode set by the application
+        // Used as a fallback when the EC mode register returns invalid values
+        protected BiosData.FanMode? LastSetMode = null;
+
         // Constructs a fan array instance
         public FanArray(
             IFan[] fan,
@@ -172,11 +176,24 @@ namespace OmenMon.Hardware.Platform {
         // Retrieves the current fan mode
         public BiosData.FanMode GetMode() {
             this.Mode.Update();
-            return (BiosData.FanMode) this.Mode.GetValue();
+            byte ecValue = (byte) this.Mode.GetValue();
+
+            // Check if the EC value maps to a recognized fan mode
+            if(Enum.IsDefined(typeof(BiosData.FanMode), ecValue)) {
+                return (BiosData.FanMode) ecValue;
+            }
+
+            // EC register doesn't hold a valid mode on this machine,
+            // return the last mode set by the application (or Default)
+            return LastSetMode ?? BiosData.FanMode.Default;
         }
 
         // Sets the current fan mode
         public void SetMode(BiosData.FanMode mode) {
+
+            // Cache the mode for GetMode fallback
+            LastSetMode = mode;
+
             try {
                 // Try BIOS WMI call first (works on older systems)
                 Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);

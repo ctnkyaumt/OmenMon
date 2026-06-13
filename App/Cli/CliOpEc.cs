@@ -190,26 +190,8 @@ namespace OmenMon.AppCli {
             Console.WriteLine();
             Thread.Sleep(2000); // Give user time to read
 
-            // (Removed blocking Console.ReadLine thread to allow KeyAvailable to work)
-
-            // Start a secondary key polling thread to capture Esc/Enter
-            bool keyThreadRunning = true;
-            Thread keyThread = new Thread(() => {
-                while(keyThreadRunning && !IsStop) {
-                    try {
-                        if(Console.KeyAvailable) {
-                            var key = Console.ReadKey(true);
-                            if(key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.Enter) {
-                                IsStop = true;
-                                break;
-                            }
-                        }
-                    } catch { }
-                    Thread.Sleep(50);
-                }
-            });
-            keyThread.IsBackground = true;
-            keyThread.Start();
+            // (Key checking is done inline in the main loop to avoid
+            // Console threading conflicts with Console.Clear)
 
             // Track how many registers changed in this reading cycle
             int readingIndex = 0;
@@ -223,6 +205,20 @@ namespace OmenMon.AppCli {
             while(!IsStop) { // Continually keep adding new data
 
                 readingIndex++;
+
+                // Check for key presses (Esc or Enter to stop)
+                try {
+                    while(Console.KeyAvailable) {
+                        var key = Console.ReadKey(true);
+                        if(key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.Enter) {
+                            IsStop = true;
+                            break;
+                        }
+                    }
+                } catch { }
+
+                if(IsStop)
+                    break;
 
                 // Stop via external marker
                 if(File.Exists(stopFile)) {
@@ -270,11 +266,6 @@ namespace OmenMon.AppCli {
                 Thread.Sleep(Config.EcMonInterval); // at specified intervals
 
             }
-
-            // (inputThread was removed)
-            // Stop the key polling thread
-            keyThreadRunning = false;
-            try { keyThread.Join(200); } catch { }
 
             // Clear screen one last time before showing save message
             Console.Clear();
