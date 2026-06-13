@@ -359,17 +359,18 @@ namespace OmenMon.AppGui {
                 // Terminate any running fan program
                 Context.Op.Program.Terminate();
 
-                // Query the current and requested mode
-                BiosData.FanMode fanModeNow = Context.Op.Platform.Fans.GetMode();
+                // Query the requested mode from dropdown
                 BiosData.FanMode fanModeAsk = (BiosData.FanMode) Enum.Parse(
                     typeof(BiosData.FanMode), 
                     (string) this.CmbFanMode.SelectedValue);
 
-                if(isFanOff) // Re-enable fan if off first
-                    Context.Op.Platform.Fans.SetOff(false);
+                // Always re-enable fan (undo Off state unconditionally)
+                // EC reads for Off state are unreliable on some models
+                Context.Op.Platform.Fans.SetOff(false);
 
-                if(isFanMax) // Disable maximum speed first
-                    Context.Op.Platform.Fans.SetMax(false);
+                // Always disable maximum speed (undo Max state unconditionally)
+                // GetMax() uses BIOS WMI so it's reliable, but always undoing is safe
+                Context.Op.Platform.Fans.SetMax(false);
 
                 // Set the levels to 0xFF to clear any custom speed settings
                 Context.Op.Platform.Fans.SetLevels(new byte[] {Byte.MaxValue, Byte.MaxValue});

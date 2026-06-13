@@ -175,15 +175,21 @@ namespace OmenMon.Hardware.Platform {
 
         // Retrieves the current fan mode
         public BiosData.FanMode GetMode() {
-            this.Mode.Update();
-            byte ecValue = (byte) this.Mode.GetValue();
 
-            // Check if the EC value maps to a recognized fan mode
-            if(Enum.IsDefined(typeof(BiosData.FanMode), ecValue)) {
-                return (BiosData.FanMode) ecValue;
+            // When using EC for fan control, read the mode from the EC register
+            if(Config.FanLevelUseEc) {
+                this.Mode.Update();
+                byte ecValue = (byte) this.Mode.GetValue();
+
+                // Check if the EC value maps to a recognized fan mode
+                if(Enum.IsDefined(typeof(BiosData.FanMode), ecValue)) {
+                    BiosData.FanMode ecMode = (BiosData.FanMode) ecValue;
+                    LastSetMode = ecMode;
+                    return ecMode;
+                }
             }
 
-            // EC register doesn't hold a valid mode on this machine,
+            // When not using EC, or when EC returns invalid data,
             // return the last mode set by the application (or Default)
             return LastSetMode ?? BiosData.FanMode.Default;
         }
