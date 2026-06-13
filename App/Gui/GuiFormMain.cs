@@ -369,17 +369,11 @@ namespace OmenMon.AppGui {
                 Context.Op.Platform.Fans.SetOff(false);
 
                 // Always disable maximum speed (undo Max state unconditionally)
-                // GetMax() uses BIOS WMI so it's reliable, but always undoing is safe
                 Context.Op.Platform.Fans.SetMax(false);
 
-                // Set the levels to 0xFF to clear any custom speed settings
-                Context.Op.Platform.Fans.SetLevels(new byte[] {Byte.MaxValue, Byte.MaxValue});
-
-                // Clear manual fan control flag to restore automatic thermal management, if needed
-                if(Config.FanLevelNeedManual)
-                    Context.Op.Platform.Fans.SetManual(false);
-
                 // Enable automatic fan in the selected mode
+                // The BIOS SetFanMode call tells the firmware to resume
+                // automatic thermal management, which overrides any custom levels
                 Context.Op.Platform.Fans.SetMode(fanModeAsk);
 
             }
