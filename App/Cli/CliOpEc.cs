@@ -190,17 +190,7 @@ namespace OmenMon.AppCli {
             Console.WriteLine();
             Thread.Sleep(2000); // Give user time to read
 
-            // Start a background thread that waits for Enter (robust across consoles)
-            bool inputThreadRunning = true;
-            Thread inputThread = new Thread(() => {
-                try {
-                    Console.ReadLine(); // Blocks until Enter is pressed
-                } catch { }
-                if(inputThreadRunning)
-                    IsStop = true;
-            });
-            inputThread.IsBackground = true;
-            inputThread.Start();
+            // (Removed blocking Console.ReadLine thread to allow KeyAvailable to work)
 
             // Start a secondary key polling thread to capture Esc/Enter
             bool keyThreadRunning = true;
@@ -281,9 +271,7 @@ namespace OmenMon.AppCli {
 
             }
 
-            // Stop the input thread
-            inputThreadRunning = false;
-            try { inputThread.Join(500); } catch { }
+            // (inputThread was removed)
             // Stop the key polling thread
             keyThreadRunning = false;
             try { keyThread.Join(200); } catch { }

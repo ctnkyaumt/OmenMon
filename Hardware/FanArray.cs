@@ -185,9 +185,12 @@ namespace OmenMon.Hardware.Platform {
             }
             
             // Also write directly to EC register (works on Victus 16 and newer)
-            // This ensures the mode is set even if BIOS call doesn't work
-            this.Mode.SetValue((byte) mode);
-            this.Mode.Update();
+            // But it can also be set by changing an Embedded Controller register
+            // Guarded by FanLevelUseEc to prevent corrupting invalid registers on WMI-only machines
+            if(Config.FanLevelUseEc) {
+                this.Mode.SetValue((byte) mode);
+                this.Mode.Update();
+            }
         }
 
         // Retrieves the fan off switch status

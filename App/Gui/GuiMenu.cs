@@ -268,8 +268,9 @@ namespace OmenMon.AppGui {
             // is different than the current one
             if(fanModeAsk != fanModeNow) {
 
-                // Clear manual fan control flag to restore automatic thermal management
-                Context.Op.Platform.Fans.SetManual(false);
+                // Clear manual fan control flag to restore automatic thermal management, if needed
+                if(Config.FanLevelNeedManual)
+                    Context.Op.Platform.Fans.SetManual(false);
 
                 // Set the requested fan mode
                 Context.Op.Platform.Fans.SetMode(fanModeAsk);
