@@ -356,6 +356,7 @@ namespace OmenMon.Library {
         }
 
         // Temperature sensors (overriden at runtime if found in the configuration file)
+        public static bool TemperatureSensorCustomized = false;
         public static OrderedDictionary TemperatureSensor = new OrderedDictionary() {
             {
                 "CPUT", new TemperatureSensorData(

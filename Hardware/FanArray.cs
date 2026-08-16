@@ -36,6 +36,7 @@ namespace OmenMon.Hardware.Platform {
         // Retrieves or sets the current fan mode
         public BiosData.FanMode GetMode();
         public void SetMode(BiosData.FanMode mode);
+        public void RestoreAutomatic(BiosData.FanMode mode);
 
         // Retrieves the fan off switch status
         // or switches the fan off
@@ -65,6 +66,10 @@ namespace OmenMon.Hardware.Platform {
         // Stores the fan on and off switch component
         protected IPlatformReadWriteComponent Switch;
 
+        // Product-specific behavior and system design data
+        protected PlatformProfile Profile;
+        protected ISettings System;
+
         // Caches the last fan mode set by the application
         // Used as a fallback when the EC mode register returns invalid values
         protected BiosData.FanMode? LastSetMode = null;
@@ -79,7 +84,9 @@ namespace OmenMon.Hardware.Platform {
             IPlatformReadWriteComponent fanCountdown,
             IPlatformReadWriteComponent fanManual,
             IPlatformReadWriteComponent fanMode,
-            IPlatformReadWriteComponent fanSwitch) {
+            IPlatformReadWriteComponent fanSwitch,
+            PlatformProfile profile,
+            ISettings system) {
 
             // Initialize the fan array
             this.Fan = new IFan[PlatformData.FanCount];
@@ -101,6 +108,9 @@ namespace OmenMon.Hardware.Platform {
 
             // Define the switch component
             this.Switch = fanSwitch;
+
+            this.Profile = profile;
+            this.System = system;
 
         }
 
@@ -174,6 +184,10 @@ namespace OmenMon.Hardware.Platform {
 
         // Sets the maximum fan speed status
         public void SetMax(bool flag) {
+            // On 08BD4, command 0x27 only implements the "on" branch.  HP's
+            // own client reapplies automatic mode before sending MaxFan=off.
+            if(!flag)
+                SetModeInternal(LastSetMode ?? BiosData.FanMode.Default, true);
             Hw.BiosSet(Hw.Bios.SetMaxFan, flag);
         }
 
@@ -200,24 +214,39 @@ namespace OmenMon.Hardware.Platform {
 
         // Sets the current fan mode
         public void SetMode(BiosData.FanMode mode) {
+            SetModeInternal(mode, false);
+        }
+
+        // Restores firmware-controlled fan behavior after Max, Off, a fixed
+        // level, or a fan program.  Order intentionally matches HP's client.
+        public void RestoreAutomatic(BiosData.FanMode mode) {
+            LastSetOff = false;
+
+            if(Config.FanLevelNeedManual)
+                SetManual(false);
+
+            SetModeInternal(mode, true);
+            Hw.BiosSet(Hw.Bios.SetMaxFan, false);
+        }
+
+        // Applies the mode through WMI.  Raw EC mode writes are deliberately
+        // excluded: their address and encoding differ between product lines.
+        protected void SetModeInternal(BiosData.FanMode mode, bool fanControlByBios) {
 
             // Cache the mode for GetMode fallback
             LastSetMode = mode;
 
             try {
-                // Try BIOS WMI call first (works on older systems)
-                Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
+                BiosData.ThermalPolicyVersion policy =
+                    this.System.GetSystemData().ThermalPolicy;
+                mode = this.Profile.ResolveFanMode(mode, policy);
             } catch {
-                // BIOS call may fail on newer systems
+                // Keep the requested value if system-design data is absent.
             }
-            
-            // Also write directly to EC register (works on Victus 16 and newer)
-            // But it can also be set by changing an Embedded Controller register
-            // Guarded by FanLevelUseEc to prevent corrupting invalid registers on WMI-only machines
-            if(Config.FanLevelUseEc) {
-                this.Mode.SetValue((byte) mode);
-                this.Mode.Update();
-            }
+
+            Hw.BiosExec(
+                bios => bios.SetFanMode(mode, fanControlByBios),
+                Hw.Bios);
         }
 
         // Retrieves the fan off switch status
@@ -245,10 +274,7 @@ namespace OmenMon.Hardware.Platform {
                     } catch {}
                 } else {
                     // Turn fans back on by restoring automatic mode via BIOS WMI
-                    try {
-                        Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode,
-                            LastSetMode ?? BiosData.FanMode.Default);
-                    } catch {}
+                    RestoreAutomatic(LastSetMode ?? BiosData.FanMode.Default);
                 }
             }
         }

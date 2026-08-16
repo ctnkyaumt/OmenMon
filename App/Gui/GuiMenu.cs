@@ -268,12 +268,8 @@ namespace OmenMon.AppGui {
             // is different than the current one
             if(fanModeAsk != fanModeNow) {
 
-                // Clear manual fan control flag to restore automatic thermal management, if needed
-                if(Config.FanLevelNeedManual)
-                    Context.Op.Platform.Fans.SetManual(false);
-
-                // Set the requested fan mode
-                Context.Op.Platform.Fans.SetMode(fanModeAsk);
+                // Set the requested mode and restore automatic thermal control.
+                Context.Op.Platform.Fans.RestoreAutomatic(fanModeAsk);
 
                 // Update the main form, if available
                 if(Context.FormMain != null)
@@ -628,7 +624,7 @@ namespace OmenMon.AppGui {
             }
 
             // Continue with the remaining part of the fan menu
-            foreach(string name in Enum.GetNames(typeof(BiosData.FanMode))) {
+            foreach(string name in Context.Op.Platform.Profile.FanModeNames) {
                 MenuFan.DropDownItems.Add(new ToolStripMenuItem(
                     Config.Locale.Get(Config.L_GUI_MENU + P_FAN_MODE + name),
                     null, EventActionFanMode, P_FAN_MODE + name));

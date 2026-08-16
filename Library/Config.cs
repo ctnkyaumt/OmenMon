@@ -338,8 +338,10 @@ namespace OmenMon.Library {
 
                     // Replace the defaults with configured temperature sensors unless none
                     // were configured or not a single sensor was set to actually be used
-                    if(TemperatureSensorXml.Count > 0 && usable)
+                    if(TemperatureSensorXml.Count > 0 && usable) {
                         TemperatureSensor = TemperatureSensorXml;
+                        TemperatureSensorCustomized = true;
+                    }
 
                     // Load the fan programs
                     foreach(XmlNode node in xml.SelectNodes(XmlPrefixFanProgram)) {

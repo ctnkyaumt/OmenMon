@@ -359,31 +359,20 @@ namespace OmenMon.AppGui {
                 // Terminate any running fan program
                 Context.Op.Program.Terminate();
 
-                try {
-                    // Parse the requested mode from the dropdown
-                    BiosData.FanMode fanModeAsk = BiosData.FanMode.Default;
-                    try {
-                        fanModeAsk = (BiosData.FanMode) Enum.Parse(
-                            typeof(BiosData.FanMode),
-                            (string) this.CmbFanMode.SelectedValue);
-                    } catch {
-                        // If parsing fails, fall back to Default
-                    }
+                // Parse the requested mode from the dropdown
+                BiosData.FanMode fanModeAsk = BiosData.FanMode.Default;
+                if(this.CmbFanMode.SelectedValue != null)
+                    fanModeAsk = (BiosData.FanMode) Enum.Parse(
+                        typeof(BiosData.FanMode),
+                        (string) this.CmbFanMode.SelectedValue);
 
-                    // Disable maximum fan speed if it was active
-                    try { Context.Op.Platform.Fans.SetMax(false); } catch { }
+                // Disable trackbars (clear constant-speed mode)
+                this.TrkFan0Lvl.Enabled = false;
+                this.TrkFan1Lvl.Enabled = false;
 
-                    // Clear the fan off state (resets cached off flag)
-                    Context.Op.Platform.Fans.SetOff(false);
-
-                    // Disable trackbars (clear constant-speed mode)
-                    this.TrkFan0Lvl.Enabled = false;
-                    this.TrkFan1Lvl.Enabled = false;
-
-                    // Set the fan mode via BIOS WMI
-                    // This single call is proven to work from CLI
-                    Context.Op.Platform.Fans.SetMode(fanModeAsk);
-                } catch { }
+                // Re-enter firmware fan control before disabling Max.  The
+                // reverse order is a no-op on Victus 08BD4 firmware.
+                Context.Op.Platform.Fans.RestoreAutomatic(fanModeAsk);
 
             }
 
@@ -555,8 +544,12 @@ namespace OmenMon.AppGui {
             // Populate the fan mode list
             // The most useful modes are on top,
             // the rest (legacy modes) is sorted alphabetically
-            List<string> fanModes = Config.FanModesSticky;
-            string[] fanModesMore = Enum.GetNames(typeof(BiosData.FanMode));
+            string[] fanModesMore = Context.Op.Platform.Profile.FanModeNames;
+            HashSet<string> fanModesAllowed = new HashSet<string>(fanModesMore);
+            List<string> fanModes = new List<string>();
+            foreach(string name in Config.FanModesSticky)
+                if(fanModesAllowed.Contains(name))
+                    fanModes.Add(name);
             Array.Sort(fanModesMore);
             fanModes.AddRange(fanModesMore);
             foreach(string name in new HashSet<string>(fanModes))
@@ -862,6 +855,7 @@ namespace OmenMon.AppGui {
                 + Conv.RTF_CF6 + Context.Op.Platform.System.GetManufacturer() + " "
                 + Conv.RTF_CF5 + Context.Op.Platform.System.GetProduct() + " "
                 + Conv.RTF_CF1 + Context.Op.Platform.System.GetVersion() + " "
+                + Conv.RTF_CF2 + "[" + Context.Op.Platform.Profile.Name + "] "
                 + Config.Locale.Get(Config.L_GUI_MAIN + Gui.G_SYS + "Born") + " "
                     + Context.Op.Platform.System.GetBornDate() + " "
                 + (Context.Op.Platform.System.GetDefaultCpuPowerLimit4() == 0 ? ""

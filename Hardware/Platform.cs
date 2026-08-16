@@ -20,6 +20,9 @@ namespace OmenMon.Hardware.Platform {
         // System information
         public ISettings System { get; private set; }
 
+        // Product-specific capabilities and EC layout
+        public PlatformProfile Profile { get; private set; }
+
         // Fan sensors and controls
         public IFanArray Fans { get; private set; }
 
@@ -35,6 +38,9 @@ namespace OmenMon.Hardware.Platform {
             // Initialize the system settings
             InitSystem();
 
+            // Select a non-invasive profile from the stable baseboard ID
+            this.Profile = PlatformProfile.ForProduct(this.System.GetProduct());
+
             // Initialize the fan controls
             InitFans();
 
@@ -45,32 +51,24 @@ namespace OmenMon.Hardware.Platform {
 
         // Initializes the fan controls
         private void InitFans() {
-
-            // Fan array can be product-specific
-            switch(this.System.GetProduct()) {
-
-                case "?": // Default
-                case "8A13":
-                case "8A14":
-                default:
-
-                    this.Fans = new FanArray(
+            EcRegisterProfile ec = this.Profile.Ec;
+            this.Fans = new FanArray(
                         new IFan[] {
 
                             // Define the CPU fan
                             new Fan(
                                 BiosData.FanType.Cpu,
                                 new EcComponent(
-                                    (byte) EmbeddedControllerData.Register.SRP1,
+                                    ec.Fan0Level,
                                     PlatformData.AccessType.Read | PlatformData.AccessType.Write),
                                 new EcComponent(
-                                    (byte) EmbeddedControllerData.Register.XGS1,
+                                    ec.Fan0Rate,
                                     PlatformData.AccessType.Read),
                                 new EcComponent(
-                                    (byte) EmbeddedControllerData.Register.XSS1,
+                                    ec.Fan0RateSet,
                                     PlatformData.AccessType.Write),
                                 new EcComponent(
-                                    (byte) EmbeddedControllerData.Register.RPM1,
+                                    ec.Fan0Rpm,
                                     PlatformData.AccessType.Read,
                                     PlatformData.DataSize.Word)),
 
@@ -78,42 +76,40 @@ namespace OmenMon.Hardware.Platform {
                             new Fan(
                                 BiosData.FanType.Gpu,
                                 new EcComponent(
-                                    (byte) EmbeddedControllerData.Register.SRP2,
+                                    ec.Fan1Level,
                                     PlatformData.AccessType.Read | PlatformData.AccessType.Write),
                                 new EcComponent(
-                                    (byte) EmbeddedControllerData.Register.XGS2,
+                                    ec.Fan1Rate,
                                     PlatformData.AccessType.Read),
                                 new EcComponent(
-                                    (byte) EmbeddedControllerData.Register.XSS2,
+                                    ec.Fan1RateSet,
                                     PlatformData.AccessType.Write),
                                 new EcComponent(
-                                    (byte) EmbeddedControllerData.Register.RPM3, // Not a mistake, RPM2 is fan #0
+                                    ec.Fan1Rpm,
                                     PlatformData.AccessType.Read,
                                     PlatformData.DataSize.Word)) },
 
                         // Define the countdown component
                         new EcComponent(
-                            (byte) EmbeddedControllerData.Register.XFCD,
+                            ec.FanCountdown,
                             PlatformData.AccessType.Read | PlatformData.AccessType.Write),
 
                         // Define the manual toggle component
                         new EcComponent(
-                            (byte) EmbeddedControllerData.Register.OMCC,
+                            ec.FanManual,
                             PlatformData.AccessType.Read | PlatformData.AccessType.Write), 
 
                         // Define the mode component
                         new EcComponent(
-                            (byte) EmbeddedControllerData.Register.HPCM,
+                            ec.FanMode,
                             PlatformData.AccessType.Read | PlatformData.AccessType.Write), 
 
                         // Define the switch component
                         new EcComponent(
-                            (byte) EmbeddedControllerData.Register.SFAN,
-                            PlatformData.AccessType.Read | PlatformData.AccessType.Write));
-
-                    break;
-
-            }
+                            ec.FanSwitch,
+                            PlatformData.AccessType.Read | PlatformData.AccessType.Write),
+                        this.Profile,
+                        this.System);
 
         }
 
@@ -124,6 +120,17 @@ namespace OmenMon.Hardware.Platform {
 
         // Initializes the temperature controls
         private void InitTemperature() {
+
+            // Use per-product defaults unless the XML supplied a usable list.
+            if(!Config.TemperatureSensorCustomized) {
+                Config.TemperatureSensor = new OrderedDictionary();
+                foreach(TemperatureProfile sensor in this.Profile.Temperature)
+                    Config.TemperatureSensor[sensor.Name] =
+                        new Config.TemperatureSensorData(
+                            PlatformData.LinkType.EmbeddedController,
+                            sensor.Register,
+                            sensor.Use);
+            }
 
             // Set up the temperature sensor array based on the configuration data
             this.Temperature = new IPlatformReadComponent[Config.TemperatureSensor.Count];

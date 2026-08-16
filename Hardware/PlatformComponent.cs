@@ -275,9 +275,6 @@ namespace OmenMon.Hardware.Platform {
                 raw = Hw.EcGetByte(this.Register);
             else
                 raw = Hw.EcGetWord(this.Register);
-            // Apply -2 offset for GPU temperature register
-            if(this.Register == 0xB4)
-                raw = Math.Max(0, raw - 2);
             return raw;
         }
 

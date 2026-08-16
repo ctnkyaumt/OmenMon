@@ -65,6 +65,7 @@ namespace OmenMon.Hardware.Bios {
         public void SetFanLevel(byte[] data);
 
         public void SetFanMode(BiosData.FanMode value);
+        public void SetFanMode(BiosData.FanMode value, bool fanControlByBios);
 
         public BiosData.FanTable GetFanTable();
         public void SetFanTable(BiosData.FanTable data);
@@ -335,9 +336,17 @@ namespace OmenMon.Hardware.Bios {
 
         // Sets the active fan performance mode
         public void SetFanMode(FanMode value) {
-            Check(Send(Cmd.Default, 0x1A, new byte[4] {0xFF, (byte) value, 0x00, 0x00}));
+            SetFanMode(value, false);
+        }
+
+        // Sets the active performance mode and whether firmware fan control
+        // should be restored.  HP's current client supplies byte #2.
+        public void SetFanMode(FanMode value, bool fanControlByBios) {
+            Check(Send(Cmd.Default, 0x1A, new byte[4] {
+                0xFF, (byte) value, fanControlByBios ? (byte) 0x01 : (byte) 0x00, 0x00}));
             // Input Byte #0: 0xFF - Constant (?)
-            // See: FanMode (enum)
+            // Input Byte #1: See FanMode (enum)
+            // Input Byte #2: Restore BIOS/firmware fan control
         }
 
         // Retrieves the fan speed level table
