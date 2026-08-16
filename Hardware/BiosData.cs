@@ -58,10 +58,15 @@ namespace OmenMon.Hardware.Bios {
             L6                = 33,  // 0x21 = 0b00100001
             Default           = 48,  // 0x30 = 0b00110000
             L2                = 48,  // 0x30 = 0b00110000
-            Performance       = 49,  // 0x31 = 0b00110001 
-            L7                = 49,  // 0x31 = 0b00110001 
+            Balance           = 48,  // 0x30 = 0b00110000 - Alias for Default
+            Normal            = 48,  // 0x30 = 0b00110000 - Alias for Default
+            Performance       = 49,  // 0x31 = 0b00110001
+            L7                = 49,  // 0x31 = 0b00110001
+            Turbo             = 49,  // 0x31 = 0b00110001 - Alias for Performance
             L3                = 64,  // 0x40 = 0b01000000
             Cool              = 80,  // 0x50 = 0b01010000
+            Quiet             = 80,  // 0x50 = 0b01010000 - Alias for Cool
+            Eco               = 80,  // 0x50 = 0b01010000 - Alias for Cool
             L4                = 80   // 0x50 = 0b01010000
         }
 

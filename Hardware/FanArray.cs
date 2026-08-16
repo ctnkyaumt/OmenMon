@@ -65,6 +65,14 @@ namespace OmenMon.Hardware.Platform {
         // Stores the fan on and off switch component
         protected IPlatformReadWriteComponent Switch;
 
+        // Caches the last fan mode set by the application
+        // Used as a fallback when the EC mode register returns invalid values
+        protected BiosData.FanMode? LastSetMode = null;
+
+        // Caches the fan off state set by the application
+        // Used when the EC fan switch register returns unreliable values
+        protected bool LastSetOff = false;
+
         // Constructs a fan array instance
         public FanArray(
             IFan[] fan,
@@ -171,33 +179,78 @@ namespace OmenMon.Hardware.Platform {
 
         // Retrieves the current fan mode
         public BiosData.FanMode GetMode() {
-            this.Mode.Update();
-            return (BiosData.FanMode) this.Mode.GetValue();
+
+            // When using EC for fan control, read the mode from the EC register
+            if(Config.FanLevelUseEc) {
+                this.Mode.Update();
+                byte ecValue = (byte) this.Mode.GetValue();
+
+                // Check if the EC value maps to a recognized fan mode
+                if(Enum.IsDefined(typeof(BiosData.FanMode), ecValue)) {
+                    BiosData.FanMode ecMode = (BiosData.FanMode) ecValue;
+                    LastSetMode = ecMode;
+                    return ecMode;
+                }
+            }
+
+            // When not using EC, or when EC returns invalid data,
+            // return the last mode set by the application (or Default)
+            return LastSetMode ?? BiosData.FanMode.Default;
         }
 
         // Sets the current fan mode
         public void SetMode(BiosData.FanMode mode) {
-            Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
-            // Note: WMI BIOS call preferred over this.Mode.SetValue((byte) mode);
+
+            // Cache the mode for GetMode fallback
+            LastSetMode = mode;
+
+            try {
+                // Try BIOS WMI call first (works on older systems)
+                Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode, mode);
+            } catch {
+                // BIOS call may fail on newer systems
+            }
+            
+            // Also write directly to EC register (works on Victus 16 and newer)
+            // But it can also be set by changing an Embedded Controller register
+            // Guarded by FanLevelUseEc to prevent corrupting invalid registers on WMI-only machines
+            if(Config.FanLevelUseEc) {
+                this.Mode.SetValue((byte) mode);
+                this.Mode.Update();
+            }
         }
 
         // Retrieves the fan off switch status
         public bool GetOff() {
-            this.Switch.Update();
-            return ((PlatformData.FanSwitch) this.Switch.GetValue()) == PlatformData.FanSwitch.Off;
+            if(Config.FanLevelUseEc) {
+                this.Switch.Update();
+                return ((PlatformData.FanSwitch) this.Switch.GetValue()) == PlatformData.FanSwitch.Off;
+            }
+            // When EC registers are unreliable, use cached state
+            return LastSetOff;
         }
 
         // Switches the fan off or back on
         public void SetOff(bool flag) {
-            if (Config.FanLevelUseEc)
+            LastSetOff = flag;
+            if(Config.FanLevelUseEc) {
+                // Use EC register to switch fans off/on
                 this.Switch.SetValue(flag ?
                     (int) PlatformData.FanSwitch.Off : (int) PlatformData.FanSwitch.On);
-            else 
-                try {
-                    // Make a WMI BIOS call to set the level of both fans
-                    Hw.BiosSet(Hw.Bios.SetFanLevel, new byte[]{0x00,0x00});
-                } catch {}
-                
+            } else {
+                if(flag) {
+                    // Turn fans off by setting levels to zero via BIOS WMI
+                    try {
+                        Hw.BiosSet(Hw.Bios.SetFanLevel, new byte[]{0x00, 0x00});
+                    } catch {}
+                } else {
+                    // Turn fans back on by restoring automatic mode via BIOS WMI
+                    try {
+                        Hw.BiosSet<BiosData.FanMode>(Hw.Bios.SetFanMode,
+                            LastSetMode ?? BiosData.FanMode.Default);
+                    } catch {}
+                }
+            }
         }
 #endregion
 

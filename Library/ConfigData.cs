@@ -1,9 +1,10 @@
   //\\   OmenMon: Hardware Monitoring & Control Utility
- //  \\  Copyright © 2023-2024 Piotr Szczepański * License: GPL3
+ //  \\  Copyright 2023-2024 Piotr Szczepański * License: GPL3
      //  https://omenmon.github.io/
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
@@ -355,54 +356,23 @@ namespace OmenMon.Library {
         }
 
         // Temperature sensors (overriden at runtime if found in the configuration file)
-        public static Dictionary<string, TemperatureSensorData> TemperatureSensor =
-            new Dictionary<string, TemperatureSensorData> {
-
-                // CPU temperature
-                ["CPUT"] = new TemperatureSensorData(
+        public static OrderedDictionary TemperatureSensor = new OrderedDictionary() {
+            {
+                "CPUT", new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.CPUT),
-
-                // GPU temperature
-                ["GPTM"] = new TemperatureSensorData(
+                    0xB0) // Value 0x27 (39°C) for CPU temperature
+            },
+            {
+                "GPU", new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.GPTM),
-
-                // Temperature reported by the BIOS
-                // (values more or less a third lower than other readings,
-                // thus currently makes no sense to use for maximum check)
-                ["BIOS"] = new TemperatureSensorData(
-                    PlatformData.LinkType.WmiBios, false),
-
-                // Platform Controller Hub temperature
-                ["RTMP"] = new TemperatureSensorData(
+                    0xB4) // New EC address
+            },
+            {
+                "SSD", new TemperatureSensorData(
                     PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.RTMP),
-
-                // Memory temperature
-                ["TMP1"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.TMP1),
-
-                // Auxilliary EC temperature probe #2
-                ["TNT2"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.TNT2),
-
-                // Auxilliary EC temperature probe #3
-                ["TNT3"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.TNT3),
-
-                // Auxilliary EC temperature probe #4
-                ["TNT4"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.TNT4),
-
-                // Auxilliary EC temperature probe #5
-                ["TNT5"] = new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    (byte) EmbeddedControllerData.Register.TNT5) };
+                    0xB7)
+            }
+        };
 
         // Maximum number of temperature sensors
         public const int TemperatureSensorMax = 9;

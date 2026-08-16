@@ -10,6 +10,7 @@ using OmenMon.External;
 using OmenMon.Hardware.Bios;
 using OmenMon.Hardware.Platform;
 using OmenMon.Library;
+using System.Diagnostics;
 
 namespace OmenMon.AppGui {
 
@@ -165,8 +166,10 @@ namespace OmenMon.AppGui {
             if(Kbd != null) // Use the keyboard class
                 Kbd.SetBacklight(!this.ChkKbdBacklight.Checked);
 
-            else // Fallback case for no customizable backlight color, only backlight toggle
+            else { // Fallback case for no customizable backlight color, only backlight toggle
                 Context.Op.Platform.System.SetKbdBacklight(!this.ChkKbdBacklight.Checked);
+                GuiOp.SignalUserChange();
+            }
 
             UpdateKbd();
         }
@@ -356,23 +359,31 @@ namespace OmenMon.AppGui {
                 // Terminate any running fan program
                 Context.Op.Program.Terminate();
 
-                // Query the current and requested mode
-                BiosData.FanMode fanModeNow = Context.Op.Platform.Fans.GetMode();
-                BiosData.FanMode fanModeAsk = (BiosData.FanMode) Enum.Parse(
-                    typeof(BiosData.FanMode), 
-                    (string) this.CmbFanMode.SelectedValue);
+                try {
+                    // Parse the requested mode from the dropdown
+                    BiosData.FanMode fanModeAsk = BiosData.FanMode.Default;
+                    try {
+                        fanModeAsk = (BiosData.FanMode) Enum.Parse(
+                            typeof(BiosData.FanMode),
+                            (string) this.CmbFanMode.SelectedValue);
+                    } catch {
+                        // If parsing fails, fall back to Default
+                    }
 
-                if(isFanOff) // Re-enable fan if off first
+                    // Disable maximum fan speed if it was active
+                    try { Context.Op.Platform.Fans.SetMax(false); } catch { }
+
+                    // Clear the fan off state (resets cached off flag)
                     Context.Op.Platform.Fans.SetOff(false);
 
-                if(isFanMax) // Disable maximum speed first
-                    Context.Op.Platform.Fans.SetMax(false);
+                    // Disable trackbars (clear constant-speed mode)
+                    this.TrkFan0Lvl.Enabled = false;
+                    this.TrkFan1Lvl.Enabled = false;
 
-                // Set the levels to 0xFF to clear any custom speed settings
-                Context.Op.Platform.Fans.SetLevels(new byte[] {Byte.MaxValue, Byte.MaxValue});
-
-                // Enable automatic fan in the selected mode
-                Context.Op.Platform.Fans.SetMode(fanModeAsk);
+                    // Set the fan mode via BIOS WMI
+                    // This single call is proven to work from CLI
+                    Context.Op.Platform.Fans.SetMode(fanModeAsk);
+                } catch { }
 
             }
 
@@ -689,10 +700,10 @@ namespace OmenMon.AppGui {
             // Update the platform fan readings
             Context.Op.Platform.UpdateFans();
 
-            // Update the fan speed [rpm]
+            // Use BIOS fan level (krpm) as RPM
             try {
-                this.LblFan0Val.Text = Context.Op.Platform.Fans.Fan[0].GetSpeed().ToString(Config.FormatFanSpeed);
-                this.LblFan1Val.Text = Context.Op.Platform.Fans.Fan[1].GetSpeed().ToString(Config.FormatFanSpeed);
+                this.LblFan0Val.Text = (Context.Op.Platform.Fans.Fan[0].GetLevel() * 100).ToString(Config.FormatFanSpeed);
+                this.LblFan1Val.Text = (Context.Op.Platform.Fans.Fan[1].GetLevel() * 100).ToString(Config.FormatFanSpeed);
             } catch { }
 
             // Update the fan level [krpm]
@@ -706,12 +717,19 @@ namespace OmenMon.AppGui {
                         Context.Op.Platform.Fans.Fan[1].GetLevel(), this.TrkFan1Lvl.Minimum, this.TrkFan1Lvl.Maximum);
             } catch { }
 
-            // Update the fan rate [%]
+            // Use BIOS fan level as % of max for rate display
             try {
-                this.BarFan0Rte.Value = Context.Op.Platform.Fans.Fan[0].GetRate();
-                this.BarFan1Rte.Value = Context.Op.Platform.Fans.Fan[1].GetRate();
-                this.LblFan0Rte.Text = this.BarFan0Rte.Value.ToString();
-                this.LblFan1Rte.Text = this.BarFan1Rte.Value.ToString();
+                int lvl0 = Context.Op.Platform.Fans.Fan[0].GetLevel();
+                int lvl1 = Context.Op.Platform.Fans.Fan[1].GetLevel();
+                int pct0 = lvl0 * 100 / Config.FanLevelMax;
+                int pct1 = lvl1 * 100 / Config.FanLevelMax;
+                // clamp to [0,100]
+                pct0 = pct0 < 0 ? 0 : pct0 > 100 ? 100 : pct0;
+                pct1 = pct1 < 0 ? 0 : pct1 > 100 ? 100 : pct1;
+                this.BarFan0Rte.Value = pct0;
+                this.BarFan1Rte.Value = pct1;
+                this.LblFan0Rte.Text = pct0.ToString();
+                this.LblFan1Rte.Text = pct1.ToString();
             } catch { }
 
             // Show the countdown, if applicable
@@ -738,7 +756,6 @@ namespace OmenMon.AppGui {
             try {
                 this.CmbFanProg.SelectedValue = Context.Op.Program.GetName();
             } catch { }
-
 
         }
 
@@ -925,12 +942,12 @@ namespace OmenMon.AppGui {
             Label labelCaption = ((Label) this.GrpTmp.Controls.Find(prefix + Gui.S_CAP, false)[0]);
             Label labelValue = ((Label) this.GrpTmp.Controls[this.GrpTmp.Controls.IndexOf(labelCaption) + 1]);
 
-            // Update the status
-            labelCaption.Enabled = value > 0;
+            // Always show sensor captions
+            labelCaption.Enabled = true;
 
-            // Update the value
-            labelValue.Text = value == 0 ? "" :
-                value.ToString() + Config.Locale.Get(Config.L_UNIT + "Temperature" + Config.LS_CUSTOM_FONT)
+            // Always update the value (show zero if necessary)
+            labelValue.Text = value.ToString()
+                + Config.Locale.Get(Config.L_UNIT + "Temperature" + Config.LS_CUSTOM_FONT)
                 + (valueTrend == PlatformData.ValueTrend.Unchanged ?
                     Conv.GetChar(Conv.SpecialChar.SpaceEn) : valueTrend == PlatformData.ValueTrend.Ascending ?
                         Conv.GetChar(Conv.SpecialChar.SupPlus) : Conv.GetChar(Conv.SpecialChar.SupMinus));

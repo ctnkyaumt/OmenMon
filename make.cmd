@@ -7,9 +7,15 @@ rem
 set DOTNET_CLI_TELEMETRY_OPTOUT=1
 setlocal
 rem For Visual Studio 2022 Build Tools only (no IDE):
-set msbuild="%ProgramFiles%\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
+rem — auto‑detect or fall back to PATH
+if exist "%ProgramFiles%\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe" (
+  set "msbuild=%ProgramFiles%\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
+) else (
+  rem assume you're in a Developer Command Prompt so msbuild is on PATH
+  set "msbuild=msbuild"
+)
 rem For Visual Studio 2022 Community Edition (IDE):
-set msbuild="%ProgramFiles%\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\MSBuild.exe"
+set msbuild="C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
 set msbuild_flags=/p:AssemblyVersion=0.0.0.0 /p:AssemblyVersionWord=Manual /p:Configuration=Release
 set nuget=%~dps0nuget.exe
 set nuget_url=https://dist.nuget.org/win-x86-commandline/latest/nuget.exe

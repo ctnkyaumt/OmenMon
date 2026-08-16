@@ -8,7 +8,6 @@
 -->
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
-        <!-- <AllowUnsafeBlocks>true</AllowUnsafeBlocks> -->
         <ApplicationIcon>Resources\Icon.ico</ApplicationIcon>
         <ApplicationManifest>OmenMon.manifest</ApplicationManifest>
         <AssemblyName>OmenMon</AssemblyName>
@@ -132,12 +131,6 @@
             <LogicalName>OmenMon.Driver.sys.gz</LogicalName>
         </EmbeddedResource>
     </ItemGroup>
-    <!-- <ItemGroup>
-        <ProjectReference Include="Driver.csproj">
-            <Project>{10ADAB1E-11B1-ABE1-5ACC-E551B1EAB0DE}</Project>
-            <Name>Driver</Name>
-        </ProjectReference>
-    </ItemGroup> -->
     <Target Name="AddVersion" BeforeTargets="CoreCompile" Condition="'$(AssemblyVersion)'!='' And '$(AssemblyVersionWord)'!=''">
         <Error
             Condition="'$([System.Text.RegularExpressions.Regex]::IsMatch(&quot;$(AssemblyVersion)&quot;, &quot;^\d+\.\d+\.\d+\.\d+$&quot;))' == false" 
@@ -163,7 +156,6 @@
     </Target>
     <Target Name="BuildComplete" AfterTargets="AfterBuild">
         <Copy SourceFiles="OmenMon.xml" DestinationFolder="$(OutDir)" />
-        <!-- <Exec Command="robocopy /nc /ndl /nfl /njh /njs /np /ns /r:2 /w:5 Bin \\Momentum\Exchange\ OmenMon.*" IgnoreExitCode="true" /> -->
     </Target>
     <Target Name="DeleteDirs" AfterTargets="Clean">
         <RemoveDir Directories="$(IntermediateOutputPath)" />

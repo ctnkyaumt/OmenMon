@@ -3,6 +3,7 @@
      //  https://omenmon.github.io/
 
 using System;
+using System.Collections.Specialized;
 using OmenMon.Hardware.Bios;
 using OmenMon.Hardware.Ec;
 using OmenMon.Library;
@@ -130,19 +131,26 @@ namespace OmenMon.Hardware.Platform {
 
             // Populate the temperature sensor array
             int i = 0;
-            foreach(string name in Config.TemperatureSensor.Keys) {
+            foreach(System.Collections.DictionaryEntry entry in Config.TemperatureSensor) {
+                string name = (string)entry.Key;
+                Library.Config.TemperatureSensorData sensorData = (Library.Config.TemperatureSensorData)entry.Value;
 
                 // Set whether the sensor can be used for maximum temperature
-                this.TemperatureUse[i] = Config.TemperatureSensor[name].Use;
+                this.TemperatureUse[i] = sensorData.Use;
 
                 // Process each sensor loaded from the configuration
-                switch(Config.TemperatureSensor[name].Source) {
+                switch(sensorData.Source) {
 
                     // Add an Embedded Controller sensor
                     case PlatformData.LinkType.EmbeddedController:
-                        this.Temperature[i++] = new EcComponent(
-                            Config.TemperatureSensor[name].Register,
-                            Config.MaxBelievableTemperature);
+                        // Create EC sensor and set its display name from config key (e.g. "GPU")
+                        var comp = new EcComponent(
+                            sensorData.Register,
+                            (int)Config.MaxBelievableTemperature);
+                        comp.SetName(name);
+                        this.Temperature[i++] = comp;
+                        global::System.Diagnostics.Debug.WriteLine(
+                            $"Temp sensor {i} → key='{name}', component name='{comp.GetName()}', register=0x{comp.GetLinkType()}" );
                         break;
 
                     // Add a WMI BIOS sensor
@@ -152,7 +160,6 @@ namespace OmenMon.Hardware.Platform {
                         break;
 
                 }
-
             }
 
         }

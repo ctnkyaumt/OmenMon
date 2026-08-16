@@ -182,7 +182,7 @@ namespace OmenMon.AppGui {
             this.LblFanUnitVal.Name = Gui.T_LBL + Gui.G_FAN + Gui.X_UNIT + Gui.S_VAL;
             this.LblFanUnitVal.Size = new Size(44, 27);
             this.LblFanUnitVal.TabIndex = 2;
-            this.LblFanUnitVal.Text = Config.Locale.Get(Config.L_UNIT + "RotationRate" + Config.LS_CUSTOM_FONT);
+            this.LblFanUnitVal.Text = "rpm";
             this.LblFanUnitVal.TextAlign = ContentAlignment.MiddleCenter;
 
             // Fan #0 value [rpm]

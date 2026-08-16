@@ -4,6 +4,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 using OmenMon.External;
@@ -257,6 +258,17 @@ namespace OmenMon.AppGui {
 
             return 0;
 
+        }
+
+        // Signals to EC monitor that user made a change
+        // Call this after any user-initiated setting change
+        public static void SignalUserChange() {
+            try {
+                string markerFile = Path.Combine(Path.GetTempPath(), "OmenMon_UserChange.tmp");
+                File.WriteAllText(markerFile, DateTime.Now.ToString());
+            } catch {
+                // Silently ignore if we can't write the marker file
+            }
         }
 
     }

@@ -20,6 +20,7 @@ namespace OmenMon.AppCli {
         public struct EcMonData {
             public bool Show;
             public List<byte> Values;
+            public List<int> UserChangeIndex; // Track indices where user likely changed settings
         }
 
 #region Embedded Controller Information Retrieval
@@ -153,46 +154,112 @@ namespace OmenMon.AppCli {
             ConsoleColor originalColor = Console.ForegroundColor;
 
             // Set up the data array
-            var data = new EcMonData[byte.MaxValue];
+            var data = new EcMonData[256];
+
+            // Generate default filename if not provided
+            if(filename == null) {
+                filename = "ecmon_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log";
+            }
+            // Use current working directory for relative paths (do not rewrite)
 
             // Create an event handler to break out of the perpetual loop
             Console.CancelKeyPress += (sender, eventArgs) => {
                 IsStop = true;
+                eventArgs.Cancel = true;
+            };
 
-                // Save the report if filename was given
-                if(filename != null)
-                    SaveEcReport(data, filename);
-
-                // Restore the console color to the original
-                Console.ForegroundColor = originalColor;
-
-                // Close the Embedded Controller
-                Hw.Ec.Close();
-
-                // Exit the application
-                App.Exit();
-
+            // Failsafe: on process exit, try to save if not already saved
+            bool saved = false;
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => {
+                if(saved) return;
+                try { if(filename != null) SaveEcReport(data, filename); } catch { }
             };
 
             // Populate the data array with initial readings
             for(int register = 0; register < data.Length; register++) {
 
                 data[register].Values = new List<byte>();
+                data[register].UserChangeIndex = new List<int>();
                 data[register].Values.Add(Hw.EcGetByte((byte) register));
 
             }
 
+            // Display instructions
+            Console.WriteLine("Monitoring Embedded Controller...");
+            Console.WriteLine("Press Ctrl+C, Enter, or Esc to stop and save log.");
+            Console.WriteLine();
+            Thread.Sleep(2000); // Give user time to read
+
+            // (Key checking is done inline in the main loop to avoid
+            // Console threading conflicts with Console.Clear)
+
+            // Track how many registers changed in this reading cycle
+            int readingIndex = 0;
+
+            // Path for the user change marker file
+            string markerFile = Path.Combine(Path.GetTempPath(), "OmenMon_UserChange.tmp");
+            // Path for a stop marker file (external way to stop)
+            string stopFile = Path.Combine(Path.GetTempPath(), "OmenMon_EcMon_Stop.tmp");
+            DateTime lastMarkerCheck = DateTime.MinValue;
+
             while(!IsStop) { // Continually keep adding new data
 
-                for(int register = 0; register < data.Length; register++) 
-                if(!IsStop) {
+                readingIndex++;
+
+                // Check for key presses (Esc or Enter to stop)
+                try {
+                    while(Console.KeyAvailable) {
+                        var key = Console.ReadKey(true);
+                        if(key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.Enter) {
+                            IsStop = true;
+                            break;
+                        }
+                    }
+                } catch { }
+
+                if(IsStop)
+                    break;
+
+                // Stop via external marker
+                if(File.Exists(stopFile)) {
+                    try { File.Delete(stopFile); } catch { }
+                    IsStop = true;
+                    break;
+                }
+                int changesInThisCycle = 0;
+                bool userChangedSettings = false;
+
+                // Check if GUI/tray signaled a user change (check marker file)
+                if(File.Exists(markerFile)) {
+                    try {
+                        DateTime markerTime = File.GetLastWriteTime(markerFile);
+                        // If marker was updated since last check, user made a change
+                        if(markerTime > lastMarkerCheck) {
+                            userChangedSettings = true;
+                            lastMarkerCheck = markerTime;
+                        }
+                    } catch { }
+                }
+
+                for(int register = 0; register < data.Length; register++) {
+                    if(IsStop)
+                        break;
 
                     byte value = Hw.EcGetByte((byte) register);
+                    byte previousValue = data[register].Values[data[register].Values.Count - 1];
+                    
                     data[register].Values.Add(value);
+
+                    if(value != previousValue) {
+                        changesInThisCycle++;
+                        // Mark this as a user change if flag is set
+                        if(userChangedSettings) {
+                            data[register].UserChangeIndex.Add(readingIndex);
+                        }
+                    }
 
                     if(value != data[register].Values[0])
                         data[register].Show = true; // Note the values that have changed
-
                 }
 
                 Cli.PrintEcReport(data); // Update the report
@@ -200,55 +267,75 @@ namespace OmenMon.AppCli {
 
             }
 
+            // Clear screen one last time before showing save message
+            Console.Clear();
+
+            // Show that we're stopping
+            Console.WriteLine("Stopping monitor...");
+            Console.WriteLine("Saving log file to: " + filename);
+            Console.WriteLine();
+            // Save the report when exiting
+            SaveEcReport(data, filename);
+            saved = true;
+
+            // Restore the console color to the original
+            Console.ForegroundColor = originalColor;
+
+            // Close the Embedded Controller
+            Hw.Ec.Close();
+
+            // Return to caller
+
         }
 
         // Saves the embedded controller monitoring report to a file
+        // Format matches documentation (#\Reg header, columns: registers; rows: time steps)
         private static void SaveEcReport(EcMonData[] data, string filename) {
             try {
                 var report = new StringBuilder();
 
-                // Output the header
+                // Header
                 report.Append("#\\Reg  ");
-
-                // Iterate through the registers
                 for(int register = 0; register < data.Length; register++) {
-
-                    // Skip those set not to be shown
                     if(!data[register].Show)
                         continue;
-
-                    // Otherwise, print out each in the header
                     report.Append(Conv.GetString((byte) register, 2, 16));
                     report.Append(" ");
                 }
-
-                // Remove the superfluous trailing separator
-                report.Remove(report.Length - 1, 1);
+                if(report[report.Length - 1] == ' ')
+                    report.Remove(report.Length - 1, 1);
                 report.AppendLine();
 
-                // Output the values: iterate through data rows
-                for(int row = 0; row < data[0].Values.Count; row++) {
-                    // Print out sequential number
-                    report.Append(Conv.GetString((ushort) row, 5, 10));
+                // Rows: nnnnn (time step) followed by values for shown registers
+                int rows = data[0].Values.Count;
+                for(int row = 0; row < rows; row++) {
+                    report.Append(Conv.GetString((uint) row, 5, 10));
                     report.Append("  ");
-                    // Iterate through the registers
+                    var userChanges = new List<string>();
                     for(int register = 0; register < data.Length; register++) {
-                        // Skip those set not to be shown
                         if(!data[register].Show)
                             continue;
-                        // Otherwise, print out the value from each
                         report.Append(Conv.GetString(data[register].Values[row], 2, 16));
+                        // Record user-initiated change on this time step for later
+                        if(data[register].UserChangeIndex != null && data[register].UserChangeIndex.Contains(row))
+                            userChanges.Add(Conv.GetString((byte)register, 2, 16));
                         report.Append(" ");
                     }
+                    if(report[report.Length - 1] == ' ')
+                        report.Remove(report.Length - 1, 1);
+
+                    // Append user changes as a comment to preserve column alignment
+                    if(userChanges.Count > 0) {
+                        report.Append("  // User change: ");
+                        report.Append(string.Join(", ", userChanges));
+                    }
+
                     report.AppendLine();
                 }
 
-                // Save the report to a file
+                // Write file (relative paths resolve to current working directory)
                 File.WriteAllText(filename, report.ToString());
-
             } catch {
-
-                // Report an error if the file could not be saved
                 App.Error("ErrFileSave");
             }
         }

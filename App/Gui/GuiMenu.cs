@@ -59,6 +59,7 @@ namespace OmenMon.AppGui {
 
         private const string P_GPU_MODE = Gui.M_ACT + Gui.G_GPU + "Mode";
         private const string S_GPU_MODE_DISCRETE = "Discrete";
+        private const string S_GPU_MODE_HYBRID = "Hybrid";
         private const string S_GPU_MODE_OPTIMUS = "Optimus";
 
         private const string P_KBD_COLOR_PRESET = Gui.M_ACT + Gui.G_KBD + "ColorPreset";
@@ -86,6 +87,7 @@ namespace OmenMon.AppGui {
         private const string I_GPU_POWER_MED = P_GPU_POWER + S_GPU_POWER_MED;
         private const string I_GPU_POWER_MIN = P_GPU_POWER + S_GPU_POWER_MIN;
         private const string I_GPU_MODE_DISCRETE = P_GPU_MODE + S_GPU_MODE_DISCRETE;
+        private const string I_GPU_MODE_HYBRID = P_GPU_MODE + S_GPU_MODE_HYBRID;
         private const string I_GPU_MODE_OPTIMUS = P_GPU_MODE + S_GPU_MODE_OPTIMUS;
 
         private const string I_KBD = Gui.M_SUB + Gui.G_KBD;
@@ -151,10 +153,15 @@ namespace OmenMon.AppGui {
                 // Update the main form
                 Context.FormMain.UpdateKbd();
 
-            } else
+            } else {
 
                 // Make a platform call otherwise
                 Context.Op.Platform.System.SetKbdBacklight(!((ToolStripMenuItem) sender).Checked);
+
+                // Signal user change
+                GuiOp.SignalUserChange();
+
+            }
 
             // Update the menu section
             UpdateKbdBacklight();
@@ -174,11 +181,16 @@ namespace OmenMon.AppGui {
                 // Update the main form
                 Context.FormMain.UpdateKbd();
 
-            } else
+            } else {
 
                 // Make a platform call otherwise
                 Context.Op.Platform.System.SetKbdColor(
                     Config.ColorPreset[((ToolStripMenuItem) sender).Name.Remove(0, P_KBD_COLOR_PRESET.Length)]);
+
+                // Signal user change
+                GuiOp.SignalUserChange();
+
+            }
 
             // Update the menu section
             UpdateKbdColorPreset();
@@ -211,6 +223,9 @@ namespace OmenMon.AppGui {
             // Toggle the maximum fan speed
             Context.Op.Platform.Fans.SetMax(!((ToolStripMenuItem) sender).Checked);
 
+            // Signal user change
+            GuiOp.SignalUserChange();
+
             // Update the main form, if available
             if(Context.FormMain != null)
                 Context.FormMain.UpdateFanCtl();
@@ -225,6 +240,9 @@ namespace OmenMon.AppGui {
 
             // Toggle the fan on or off
             Context.Op.Platform.Fans.SetOff(!((ToolStripMenuItem) sender).Checked);
+
+            // Signal user change
+            GuiOp.SignalUserChange();
 
             // Update the main form, if available
             if(Context.FormMain != null)
@@ -249,6 +267,10 @@ namespace OmenMon.AppGui {
             // Proceed only if the requested mode
             // is different than the current one
             if(fanModeAsk != fanModeNow) {
+
+                // Clear manual fan control flag to restore automatic thermal management, if needed
+                if(Config.FanLevelNeedManual)
+                    Context.Op.Platform.Fans.SetManual(false);
 
                 // Set the requested fan mode
                 Context.Op.Platform.Fans.SetMode(fanModeAsk);
@@ -325,6 +347,9 @@ namespace OmenMon.AppGui {
                 // Set the requested GPU mode
                 Context.Op.Platform.System.SetGpuMode(gpuModeAsk);
 
+                // Signal user change
+                GuiOp.SignalUserChange();
+
                 // Update the menu section
                 UpdateGpuMode();
 
@@ -349,6 +374,9 @@ namespace OmenMon.AppGui {
 
             // Set the requested GPU power
             Context.Op.Platform.System.SetGpuPower(gpuPowerData);
+
+            // Signal user change
+            GuiOp.SignalUserChange();
 
             // Update the menu section
             UpdateGpuPower();
@@ -790,12 +818,25 @@ namespace OmenMon.AppGui {
 
                 // Retrieve the current GPU mode
                 BiosData.GpuMode gpuMode = Context.Op.Platform.System.GetGpuMode(true);
+                
+                // Check if Optimus is actually supported
+                bool hasOptimus = Context.Op.Platform.System.GetSystemData()
+                    .GpuModeSwitch.HasFlag(BiosData.SysGpuModeSwitch.Supported8);
 
                 // Set the checked status accordingly
                 ((ToolStripMenuItem) MenuGpu.DropDownItems[I_GPU_MODE_DISCRETE]).Checked =
                     gpuMode == BiosData.GpuMode.Discrete;
                 ((ToolStripMenuItem) MenuGpu.DropDownItems[I_GPU_MODE_OPTIMUS]).Checked =
                     (gpuMode == BiosData.GpuMode.Hybrid || gpuMode == BiosData.GpuMode.Optimus);
+                
+                // Update the label for non-Optimus systems to show "Hybrid" instead
+                if(!hasOptimus) {
+                    ((ToolStripMenuItem) MenuGpu.DropDownItems[I_GPU_MODE_OPTIMUS]).Text =
+                        Config.Locale.Get(Config.L_GUI_MENU + I_GPU_MODE_HYBRID);
+                } else {
+                    ((ToolStripMenuItem) MenuGpu.DropDownItems[I_GPU_MODE_OPTIMUS]).Text =
+                        Config.Locale.Get(Config.L_GUI_MENU + I_GPU_MODE_OPTIMUS);
+                }
 
             } else {
 
