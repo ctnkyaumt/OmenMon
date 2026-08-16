@@ -58,7 +58,7 @@ namespace OmenMon.AppCli {
         public static void PrintEcReport(CliOp.EcMonData[] data) {
 
             // Start with an empty screen
-            Console.Clear();
+            try { Console.Clear(); } catch { }
 
             // Iterate through all the registers
             for(int register = 0; register < data.Length; register++) {

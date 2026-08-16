@@ -150,29 +150,34 @@ namespace OmenMon.AppCli {
         // Monitors the Embedded Controller registers for changes and reports,
         // optionally saving to a file as well
         private static void EcMon(string filename = null) {
+            IsStop = false;
+
             // Save the console color to be restored later
             ConsoleColor originalColor = Console.ForegroundColor;
+            bool interactive = !Console.IsInputRedirected && !Console.IsOutputRedirected;
 
             // Set up the data array
             var data = new EcMonData[256];
 
-            // Generate default filename if not provided
-            if(filename == null) {
-                filename = "ecmon_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log";
+            // Generate a writable, predictable default filename.
+            if(string.IsNullOrWhiteSpace(filename)) {
+                string logDirectory = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "OmenMon Logs");
+                try {
+                    Directory.CreateDirectory(logDirectory);
+                } catch {
+                    logDirectory = Path.GetTempPath();
+                }
+                filename = Path.Combine(logDirectory,
+                    "ecmon_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log");
             }
-            // Use current working directory for relative paths (do not rewrite)
+            filename = Path.GetFullPath(filename);
 
             // Create an event handler to break out of the perpetual loop
             Console.CancelKeyPress += (sender, eventArgs) => {
                 IsStop = true;
                 eventArgs.Cancel = true;
-            };
-
-            // Failsafe: on process exit, try to save if not already saved
-            bool saved = false;
-            AppDomain.CurrentDomain.ProcessExit += (s, e) => {
-                if(saved) return;
-                try { if(filename != null) SaveEcReport(data, filename); } catch { }
             };
 
             // Populate the data array with initial readings
@@ -186,9 +191,13 @@ namespace OmenMon.AppCli {
 
             // Display instructions
             Console.WriteLine("Monitoring Embedded Controller...");
-            Console.WriteLine("Press Ctrl+C, Enter, or Esc to stop and save log.");
+            Console.WriteLine(interactive ?
+                "Press Ctrl+C, Enter, or Esc to stop and save log." :
+                "Press Ctrl+C to stop and save log.");
+            Console.WriteLine("Log file: " + filename);
             Console.WriteLine();
-            Thread.Sleep(2000); // Give user time to read
+            if(interactive)
+                Thread.Sleep(1000);
 
             // (Key checking is done inline in the main loop to avoid
             // Console threading conflicts with Console.Clear)
@@ -200,91 +209,93 @@ namespace OmenMon.AppCli {
             string markerFile = Path.Combine(Path.GetTempPath(), "OmenMon_UserChange.tmp");
             // Path for a stop marker file (external way to stop)
             string stopFile = Path.Combine(Path.GetTempPath(), "OmenMon_EcMon_Stop.tmp");
-            DateTime lastMarkerCheck = DateTime.MinValue;
+            DateTime lastMarkerCheck = File.Exists(markerFile) ?
+                File.GetLastWriteTimeUtc(markerFile) : DateTime.MinValue;
+            try { if(File.Exists(stopFile)) File.Delete(stopFile); } catch { }
 
-            while(!IsStop) { // Continually keep adding new data
+            try {
+                // Create the log immediately, then checkpoint it periodically.
+                SaveEcReport(data, filename);
 
-                readingIndex++;
+                while(!IsStop) { // Continually keep adding new data
 
-                // Check for key presses (Esc or Enter to stop)
-                try {
-                    while(Console.KeyAvailable) {
-                        var key = Console.ReadKey(true);
-                        if(key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.Enter) {
-                            IsStop = true;
-                            break;
-                        }
-                    }
-                } catch { }
+                    readingIndex++;
 
-                if(IsStop)
-                    break;
-
-                // Stop via external marker
-                if(File.Exists(stopFile)) {
-                    try { File.Delete(stopFile); } catch { }
-                    IsStop = true;
-                    break;
-                }
-                int changesInThisCycle = 0;
-                bool userChangedSettings = false;
-
-                // Check if GUI/tray signaled a user change (check marker file)
-                if(File.Exists(markerFile)) {
-                    try {
-                        DateTime markerTime = File.GetLastWriteTime(markerFile);
-                        // If marker was updated since last check, user made a change
-                        if(markerTime > lastMarkerCheck) {
-                            userChangedSettings = true;
-                            lastMarkerCheck = markerTime;
+                    // Check for key presses (Esc or Enter to stop)
+                    if(interactive) try {
+                        while(Console.KeyAvailable) {
+                            var key = Console.ReadKey(true);
+                            if(key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.Enter) {
+                                IsStop = true;
+                                break;
+                            }
                         }
                     } catch { }
-                }
 
-                for(int register = 0; register < data.Length; register++) {
                     if(IsStop)
                         break;
 
-                    byte value = Hw.EcGetByte((byte) register);
-                    byte previousValue = data[register].Values[data[register].Values.Count - 1];
-                    
-                    data[register].Values.Add(value);
+                    // Stop via external marker
+                    if(File.Exists(stopFile)) {
+                        try { File.Delete(stopFile); } catch { }
+                        IsStop = true;
+                        break;
+                    }
+                    bool userChangedSettings = false;
 
-                    if(value != previousValue) {
-                        changesInThisCycle++;
-                        // Mark this as a user change if flag is set
-                        if(userChangedSettings) {
-                            data[register].UserChangeIndex.Add(readingIndex);
-                        }
+                    // Check if GUI/tray signaled a user change (check marker file)
+                    if(File.Exists(markerFile)) {
+                        try {
+                            DateTime markerTime = File.GetLastWriteTimeUtc(markerFile);
+                            // If marker was updated since last check, user made a change
+                            if(markerTime > lastMarkerCheck) {
+                                userChangedSettings = true;
+                                lastMarkerCheck = markerTime;
+                            }
+                        } catch { }
                     }
 
-                    if(value != data[register].Values[0])
-                        data[register].Show = true; // Note the values that have changed
+                    for(int register = 0; register < data.Length; register++) {
+                        if(IsStop)
+                            break;
+
+                        byte value = Hw.EcGetByte((byte) register);
+                        byte previousValue = data[register].Values[data[register].Values.Count - 1];
+                    
+                        data[register].Values.Add(value);
+
+                        if(value != previousValue && userChangedSettings) {
+                            data[register].UserChangeIndex.Add(readingIndex);
+                        }
+
+                        if(value != data[register].Values[0])
+                            data[register].Show = true; // Note the values that have changed
+                    }
+
+                    if(interactive)
+                        Cli.PrintEcReport(data); // Update the report
+
+                    if(readingIndex % 10 == 0)
+                        SaveEcReport(data, filename);
+
+                    Thread.Sleep(Config.EcMonInterval); // at specified intervals
+
                 }
+            } finally {
+                if(interactive)
+                    try { Console.Clear(); } catch { }
 
-                Cli.PrintEcReport(data); // Update the report
-                Thread.Sleep(Config.EcMonInterval); // at specified intervals
+                Console.WriteLine("Stopping monitor...");
+                Console.WriteLine("Saved log file to: " + filename);
+                Console.WriteLine();
+                SaveEcReport(data, filename);
 
+                // Restore the console color to the original
+                Console.ForegroundColor = originalColor;
+
+                // Close the Embedded Controller
+                Hw.Ec.Close();
             }
-
-            // Clear screen one last time before showing save message
-            Console.Clear();
-
-            // Show that we're stopping
-            Console.WriteLine("Stopping monitor...");
-            Console.WriteLine("Saving log file to: " + filename);
-            Console.WriteLine();
-            // Save the report when exiting
-            SaveEcReport(data, filename);
-            saved = true;
-
-            // Restore the console color to the original
-            Console.ForegroundColor = originalColor;
-
-            // Close the Embedded Controller
-            Hw.Ec.Close();
-
-            // Return to caller
 
         }
 
