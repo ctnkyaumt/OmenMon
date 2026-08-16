@@ -31,6 +31,9 @@ namespace OmenMon.AppGui {
 
         // Last-rendered image and its colors
         private Bitmap Image;
+
+        // Physical keyboard layout selected from the baseboard profile
+        private readonly bool IsSingleZone;
 #endregion
 
 #region Initialization
@@ -40,15 +43,18 @@ namespace OmenMon.AppGui {
 
             // Initialize the parent class reference
             this.Context = context;
+            this.IsSingleZone = context.Op.Platform.Profile.IsSingleZoneKeyboard;
 
             // Set up the new template that serves as a base for every redraw
-            this.Template = new Bitmap(OmenMon.Resources.Keyboard);
+            this.Template = new Bitmap(this.IsSingleZone ?
+                OmenMon.Resources.KeyboardOff : OmenMon.Resources.Keyboard);
 
             // Populate the color remap table with original colors to be replaced
-            this.Map = new ColorMap[4];
-            for(int i = 0; i < 4; i++) {
+            this.Map = new ColorMap[this.IsSingleZone ? 1 : 4];
+            for(int i = 0; i < this.Map.Length; i++) {
                 this.Map[i] = new ColorMap();
-                this.Map[i].OldColor = Color.FromArgb(Config.GuiColorKbdZoneOrig[i]);
+                this.Map[i].OldColor = Color.FromArgb(this.IsSingleZone ?
+                    unchecked((int) 0xFFCCCCCC) : Config.GuiColorKbdZoneOrig[i]);
             }
 
             // Set up the attribute structure
@@ -110,14 +116,26 @@ namespace OmenMon.AppGui {
 
         // Sets the color of a given zone
         public void SetColor(BiosData.KbdZone zone, int color) {
-            // Change all zones to the same color
-            SetColors(color);
+            if(this.IsSingleZone) {
+                SetColors(color);
+            } else if(this.ColorArray[(int) zone] != color) {
+                this.ColorArray[(int) zone] = color;
+                Update();
+            }
         }
 
         // Sets the colors for all zones
         public void SetColors(int[] color) {
+            if(color == null || color.Length < 1)
+                throw new ArgumentOutOfRangeException();
+
+            if(this.IsSingleZone)
+                color = new int[] { color[0], color[0], color[0], color[0] };
+            else if(color.Length != 4)
+                throw new ArgumentOutOfRangeException();
+
             if(!Conv.ArraysEqual(this.ColorArray, color)) {
-                this.ColorArray = color;
+                this.ColorArray = (int[]) color.Clone();
                 Update();
             }
         }
@@ -136,7 +154,8 @@ namespace OmenMon.AppGui {
             // Read the colors from the structure
             int[] color = new int[4];
             for(int i = 0; i < 4; i++)
-                color[i] = (int) colorTable.Zone[i].ValueReverse;
+                color[i] = (int) colorTable.Zone[
+                    i < colorTable.Zone.Length ? i : 0].ValueReverse;
 
             // Set the colors
             SetColors(color);
@@ -152,11 +171,14 @@ namespace OmenMon.AppGui {
 
         // Sets the zone currently being modified
         public void SetZone(BiosData.KbdZone zone) {
-            this.Zone = zone;
+            this.Zone = this.IsSingleZone ? BiosData.KbdZone.Right : zone;
         }
 
         // Sets the zone given the co-ordinates
         public BiosData.KbdZone SetZone(int x, int y) {
+
+            if(this.IsSingleZone)
+                return this.Zone = BiosData.KbdZone.Right;
 
             // Calculate the relative horizontal co-ordinate
             int rx = 100 * x / this.Context.FormMain.PicKbd.Width;
@@ -197,24 +219,33 @@ namespace OmenMon.AppGui {
 #region Hardware
         // Gets the current state from hardware
         public void GetHw() {
+            // Load without writing the same state back during application start.
+            this.IsBacklight = Context.Op.Platform.System.GetKbdBacklight()
+                == BiosData.Backlight.On;
 
-            // Get the backlight state
-            SetBacklight(Context.Op.Platform.System.GetKbdBacklight()
-                == BiosData.Backlight.On ? true : false, true); // Defer update
+            BiosData.ColorTable colorTable =
+                Context.Op.Platform.System.GetKbdColor();
+            for(int i = 0; i < 4; i++)
+                this.ColorArray[i] = (int) colorTable.Zone[
+                    i < colorTable.Zone.Length ? i : 0].ValueReverse;
 
-            // Get the color table
-            SetColors(Context.Op.Platform.System.GetKbdColor());
+            if(this.IsSingleZone)
+                for(int i = 1; i < 4; i++)
+                    this.ColorArray[i] = this.ColorArray[0];
+
+            Update(false);
 
         }
 
         // Sets the hardware to the current state
         public void SetHw() {
-
-            // Set the backlight state
-            Context.Op.Platform.System.SetKbdBacklight(this.IsBacklight);
-
-            // Set the color table
+            // HP's client writes the color buffer before brightness.  On some
+            // Victus firmware this initializes software control that otherwise
+            // only starts after the physical Fn/F4 key is pressed once.
             Context.Op.Platform.System.SetKbdColor(new BiosData.ColorTable(ColorArray, true));
+
+            // Set brightness/backlight after the color table.
+            Context.Op.Platform.System.SetKbdBacklight(this.IsBacklight);
 
             // Signal that user made a change (for EC monitor logging)
             GuiOp.SignalUserChange();
@@ -235,6 +266,9 @@ namespace OmenMon.AppGui {
 
         // Retrieves the parameter that re-creates the current settings
         public string GetParam() {
+            if(this.IsSingleZone)
+                return GetColorString(BiosData.KbdZone.Right);
+
             return GetColorString(BiosData.KbdZone.Right)
                 + ":" + GetColorString(BiosData.KbdZone.Middle)
                 + ":" + GetColorString(BiosData.KbdZone.Left)
@@ -247,9 +281,10 @@ namespace OmenMon.AppGui {
 
                 // Compare each preset to the current colors
                 if(ColorArray[0] == Config.ColorPreset[name].Zone[0].ValueReverse
-                    && ColorArray[1] == Config.ColorPreset[name].Zone[1].ValueReverse
-                    && ColorArray[2] == Config.ColorPreset[name].Zone[2].ValueReverse
-                    && ColorArray[3] == Config.ColorPreset[name].Zone[3].ValueReverse)
+                    && (this.IsSingleZone
+                    || (ColorArray[1] == Config.ColorPreset[name].Zone[1].ValueReverse
+                        && ColorArray[2] == Config.ColorPreset[name].Zone[2].ValueReverse
+                        && ColorArray[3] == Config.ColorPreset[name].Zone[3].ValueReverse)))
 
                     return name;
 
@@ -259,12 +294,12 @@ namespace OmenMon.AppGui {
 
 #region Update
         // Redraws the picture in new colors given an array of color values
-        public void Update() {
+        public void Update(bool setHardware = true) {
 
             // Fill out the color map with new color values
-            for(int i = 0; i < 4; i++)
+            for(int i = 0; i < this.Map.Length; i++)
                 Map[i].NewColor = Color.FromArgb(this.IsBacklight ?
-                    Conv.GetColorMaxAlpha(this.ColorArray[i])
+                    Conv.GetColorMaxAlpha(this.ColorArray[this.IsSingleZone ? 0 : i])
                     : Config.GuiColorKbdBacklightOff);
 
             // Update the remap table within the persistent attribute structure
@@ -292,7 +327,8 @@ namespace OmenMon.AppGui {
             }
 
             // Update the hardware
-            SetHw();
+            if(setHardware)
+                SetHw();
 
         }
 
