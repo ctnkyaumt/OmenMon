@@ -78,6 +78,10 @@ namespace OmenMon.Hardware.Platform {
         // Used when the EC fan switch register returns unreliable values
         protected bool LastSetOff = false;
 
+        // Caches the fan max state set by the application
+        // Used when BIOS/EC reports instantaneous RPM rather than latch state
+        protected bool LastSetMax = false;
+
         // Constructs a fan array instance
         public FanArray(
             IFan[] fan,
@@ -141,6 +145,7 @@ namespace OmenMon.Hardware.Platform {
                 // Report failures instead of claiming the target was accepted.
                 Hw.Bios.SetFanLevel(levels);
                 LastSetOff = levels[0] == 0 && levels[1] == 0;
+                LastSetMax = false;
                 return;
             }
 
@@ -192,11 +197,14 @@ namespace OmenMon.Hardware.Platform {
 
         // Retrieves the maximum fan speed status
         public bool GetMax() {
+            if(Profile.UsesBiosFanControl)
+                return LastSetMax;
             return Hw.BiosGet<bool>(Hw.Bios.GetMaxFan);
         }
 
         // Sets the maximum fan speed status
         public void SetMax(bool flag) {
+            LastSetMax = flag;
             if(!flag) {
                 RestoreAutomatic(LastSetMode ?? BiosData.FanMode.Default);
                 return;
@@ -232,15 +240,11 @@ namespace OmenMon.Hardware.Platform {
         }
 
         // Restores firmware-controlled fan behavior after Max, Off, a fixed
-        // level, or a fan program. Release targets before HP's mode/Max-off sequence.
+        // level, or a fan program.
         public void RestoreAutomatic(BiosData.FanMode mode) {
             LastSetOff = false;
+            LastSetMax = false;
 
-            // GC27(off) is a no-op on 8BD4. Release the fixed levels too.
-            if(Profile.UsesBiosFanControl)
-                Hw.Bios.SetFanLevel(new byte[] { Byte.MaxValue, Byte.MaxValue });
-            else
-                SetLevels(new byte[] { Byte.MaxValue, Byte.MaxValue });
             if(Config.FanLevelNeedManual && !Profile.UsesBiosFanControl)
                 SetManual(false);
             SetModeInternal(mode, true);
@@ -279,6 +283,8 @@ namespace OmenMon.Hardware.Platform {
         // Switches the fan off or back on
         public void SetOff(bool flag) {
             LastSetOff = flag;
+            if(flag)
+                LastSetMax = false;
             if(Config.FanLevelUseEc && !Profile.UsesBiosFanControl) {
                 // Use EC register to switch fans off/on
                 this.Switch.SetValue(flag ?

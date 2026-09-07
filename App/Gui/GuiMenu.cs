@@ -148,7 +148,7 @@ namespace OmenMon.AppGui {
             if(Context.FormMain != null && Context.FormMain.Kbd != null) {
 
                 // Use the main form routine to update
-                Context.FormMain.Kbd.SetBacklight(!((ToolStripMenuItem) sender).Checked);
+                Context.FormMain.Kbd.SetBacklight(!((ToolStripMenuItem) sender).Checked, false, true);
 
                 // Update the main form
                 Context.FormMain.UpdateKbd();

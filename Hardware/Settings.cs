@@ -182,9 +182,10 @@ namespace OmenMon.Hardware.Platform {
             return GetGpuPower(forceUpdate).Ppab;
         }
 
-        // Queries the keyboard backlight statuss
+        // Queries the keyboard backlight status
         public BiosData.Backlight GetKbdBacklight() {
-            return Hw.BiosGet<BiosData.Backlight>(Hw.Bios.GetBacklight);
+            byte val = (byte) Hw.BiosGet<BiosData.Backlight>(Hw.Bios.GetBacklight);
+            return (val & 0x80) != 0 ? BiosData.Backlight.On : BiosData.Backlight.Off;
         }
 
         // Checks whether keyboard backlight toggling is supported

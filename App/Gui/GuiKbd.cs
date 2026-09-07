@@ -76,8 +76,8 @@ namespace OmenMon.AppGui {
         }
 
         // Sets the backlight state
-        public void SetBacklight(bool flag, bool deferUpdate = false) {
-            if(this.IsBacklight != flag) {
+        public void SetBacklight(bool flag, bool deferUpdate = false, bool force = false) {
+            if(this.IsBacklight != flag || force) {
                 this.IsBacklight = flag;
 
                 // Allow for deferring update
@@ -244,7 +244,9 @@ namespace OmenMon.AppGui {
             // only starts after the physical Fn/F4 key is pressed once.
             Context.Op.Platform.System.SetKbdColor(new BiosData.ColorTable(ColorArray, true));
 
-            // Set brightness/backlight after the color table.
+            // Set brightness/backlight after the color table. Repeat once to
+            // ensure the firmware latches software control on first transition.
+            Context.Op.Platform.System.SetKbdBacklight(this.IsBacklight);
             Context.Op.Platform.System.SetKbdBacklight(this.IsBacklight);
 
             // Signal that user made a change (for EC monitor logging)

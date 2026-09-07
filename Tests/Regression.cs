@@ -92,15 +92,22 @@ internal static class Regression {
         Equal("levels:35,36", calls.Single(), "Victus ignores legacy EC flag");
         calls.Clear();
         fans.RestoreAutomatic(BiosData.FanMode.Default);
-        Equal("levels:255,255|mode:48:True|max:False", string.Join("|", calls), "release before Auto");
+        Equal("mode:48:True|max:False", string.Join("|", calls), "release before Auto");
         calls.Clear(); fans.SetMax(false);
-        Equal("levels:255,255|mode:48:True|max:False", string.Join("|", calls), "Max off restores Auto");
+        Equal("mode:48:True|max:False", string.Join("|", calls), "Max off restores Auto");
+        calls.Clear(); fans.SetMax(true);
+        Equal("max:True", calls.Single(), "Max on sets WMI MaxFan");
+        Check(fans.GetMax(), "Victus Max cached true");
+        calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
+        Check(!fans.GetMax(), "Victus Max cached false after Auto");
         failMode = true;
         Throws(() => fans.SetMode(BiosData.FanMode.Performance), "failed mode propagates");
         Equal(BiosData.FanMode.Default, fans.GetMode(), "failed mode does not update cache");
-        failMode = false; failLevels = true; calls.Clear();
-        Throws(() => fans.RestoreAutomatic(BiosData.FanMode.Performance), "failed release propagates");
-        Equal(0, calls.Count, "failed release cannot report Auto success");
+        failMode = true; calls.Clear();
+        Throws(() => fans.RestoreAutomatic(BiosData.FanMode.Performance), "failed mode propagates in restore");
+        Equal(0, calls.Count, "failed mode cannot report Auto success");
+        failMode = false;
+        failLevels = true;
         Throws(() => fans.SetLevels(new byte[] { 35, 35 }), "failed level propagates");
         failLevels = false; Config.FanLevelUseEc = false;
         int manualState = -1;
@@ -188,9 +195,9 @@ internal static class Regression {
         Check(program.Run("Regression"), "program starts");
         Equal("mode:49:False|gpu:87|levels:35,36", string.Join("|", calls), "policy before fixed speed");
         calls.Clear(); Check(program.Suspend(), "program suspends");
-        Equal("levels:255,255|mode:48:True|max:False|gpu:75", string.Join("|", calls), "suspend restores exact state");
+        Equal("mode:48:True|max:False|gpu:75", string.Join("|", calls), "suspend restores exact state");
         program.Resume(); calls.Clear(); Check(program.Terminate(), "program terminates");
-        Equal("levels:255,255|mode:48:True|max:False|gpu:75", string.Join("|", calls), "terminate restores Auto");
+        Equal("mode:48:True|max:False|gpu:75", string.Join("|", calls), "terminate restores Auto");
     }
     static void EcReports() {
         var save = typeof(CliOp).GetMethod("SaveEcReport", BindingFlags.NonPublic | BindingFlags.Static);

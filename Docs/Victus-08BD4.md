@@ -36,17 +36,18 @@ SetFanMode sends [255, mode, fanControlByBios, 0]. The 8BD4 handler ignores
 the third byte, although other firmware may use it. HP's ApplySettings applies
 the mode before MaxFan. Its software fan controller subsequently writes targets.
 
-On the laptop, the previous mode + Max-off sequence left fans near 5800/6100 RPM
-at idle. Explicitly releasing targets with [255,255] before that sequence
-restored about 2300/2600 RPM. Therefore OmenMon's Auto path now:
+On the laptop, Max readback (GC26) is an instantaneous RPM threshold check
+rather than a control-mode latch. While fans spin down from Max, GC26 returns 1
+for up to 30 seconds. Without caching, the periodic GUI refresh immediately
+rechecked Max and overturned Auto. Furthermore, GC2E passes bytes directly to
+EC commands 0x22/0x23 (target speeds); sending 255/255 saturated the EC manual
+targets instead of restoring automatic thermal curves.
 
-1. Releases both targets with 0x2E, using the full HP payload.
-2. Sends the requested mode with the firmware-control flag.
-3. Sends Max off for compatibility with firmware that implements it.
-
-The release interpretation is supported by the laptop test and the existing
-OmenMon protocol; the BIOS wrapper itself merely forwards the target bytes.
-The revised binary still needs another physical Max -> Auto test.
+OmenMon now:
+1. Maintains a cached `LastSetMax` state for boards with RPM-based GC26.
+2. In `RestoreAutomatic`, clears `LastSetMax` and `LastSetOff`, sends the
+   requested mode with firmware-control enabled (GC1A), and disables Max (GC27).
+3. Never sends 255/255 manual fan targets when returning to Auto.
 
 All GUI and fan-program exit paths use RestoreAutomatic. Choosing the same
 mode in the tray also restores Auto and stops a running program. Fixed speed
@@ -106,8 +107,11 @@ The firmware reports ZoneCount 3 and four color slots even though this device
 has one physical zone. Product 8BD4 remains explicitly single-zone. All slots
 carry the same chosen color; color is written before enabling backlight.
 
-The previous build passed physical green/off/restoration testing. Cold-boot
-activation without pressing the keyboard-light key first remains unverified.
+The firmware reports LC04 backlight status as 0x00 when off and 0xE4 (bit 7 set)
+when on. Bit 7 is checked to normalize on/off state. To ensure seamless software
+control handover from firmware autonomous boot state, backlight commands are
+written with dual latching and user toggle clicks force hardware updates without
+cached-state suppression.
 
 ## EC logging and automated checks
 
