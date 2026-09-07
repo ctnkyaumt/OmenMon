@@ -39,15 +39,24 @@ the mode before MaxFan. Its software fan controller subsequently writes targets.
 On the laptop, Max readback (GC26) is an instantaneous RPM threshold check
 rather than a control-mode latch. While fans spin down from Max, GC26 returns 1
 for up to 30 seconds. Without caching, the periodic GUI refresh immediately
-rechecked Max and overturned Auto. Furthermore, GC2E passes bytes directly to
-EC commands 0x22/0x23 (target speeds); sending 255/255 saturated the EC manual
-targets instead of restoring automatic thermal curves.
+rechecked Max and overturned Auto. Therefore, OmenMon maintains a cached
+`LastSetMax` state on boards with RPM-based GC26 so user-commanded Auto is preserved
+during deceleration.
+
+Furthermore, on 8BD4 the ACPI AML method GC27 has no off branch (passing 0 is a
+no-op), and GC1A only updates the low bit of OGHM without clearing EC target
+speed registers. The EC target registers stay latched at manual speed until
+explicitly released. Byte 0xFF (255) is HP's official firmware sentinel for
+releasing manual speed overrides to the automatic thermal curve (used by HP OGH
+AdaptivePowerControlV1::RestoreFanSpeedForCleanCreek and DynamicFanCurve::SetFanSpeeds).
+On laptop test, calling 0x2E with [255, 255] successfully returned fans from ~5900 RPM
+to ~2300 RPM.
 
 OmenMon now:
 1. Maintains a cached `LastSetMax` state for boards with RPM-based GC26.
-2. In `RestoreAutomatic`, clears `LastSetMax` and `LastSetOff`, sends the
-   requested mode with firmware-control enabled (GC1A), and disables Max (GC27).
-3. Never sends 255/255 manual fan targets when returning to Auto.
+2. In `RestoreAutomatic`, releases fixed targets via 0x2E with [255, 255] before
+   sending the requested mode (GC1A) and disabling Max (GC27).
+3. Clears `LastSetMax` and `LastSetOff` on restore so Auto mode is cleanly reported.
 
 All GUI and fan-program exit paths use RestoreAutomatic. Choosing the same
 mode in the tray also restores Auto and stops a running program. Fixed speed
@@ -108,10 +117,10 @@ has one physical zone. Product 8BD4 remains explicitly single-zone. All slots
 carry the same chosen color; color is written before enabling backlight.
 
 The firmware reports LC04 backlight status as 0x00 when off and 0xE4 (bit 7 set)
-when on. Bit 7 is checked to normalize on/off state. To ensure seamless software
-control handover from firmware autonomous boot state, backlight commands are
-written with dual latching and user toggle clicks force hardware updates without
-cached-state suppression.
+when on. Bit 7 is checked to normalize on/off state. To match HP OGH FourZoneHelper,
+backlight off sends 0x64 (100% brightness level without bit 7) rather than 0x00,
+preventing brightness register zeroing. Backlight commands are written with dual
+latching and user toggle clicks force hardware updates without cached-state suppression.
 
 ## EC logging and automated checks
 

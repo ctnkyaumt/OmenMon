@@ -39,9 +39,8 @@ namespace OmenMon.Hardware.Bios {
 #region BIOS Control Data
         // Keyboard backlight toggle
         public enum Backlight : byte {
-            Off       = 0x00,  // 0b00000000 - Keyboard backlight off (EC level 0)
-            LegacyOff = 0x64,  // 0b01100100 - Keyboard backlight off (level without bit 7)
-            On        = 0xE4   // 0b11100100 - Keyboard backlight on
+            Off = 0x64,  // 0b01100100 - Keyboard backlight off (level 100 without bit 7)
+            On  = 0xE4   // 0b11100100 - Keyboard backlight on
         }
 
         // Fan performance mode

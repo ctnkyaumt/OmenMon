@@ -245,6 +245,12 @@ namespace OmenMon.Hardware.Platform {
             LastSetOff = false;
             LastSetMax = false;
 
+            // GC27(off) is a no-op on 8BD4. Release manual targets via 0x2E sentinel.
+            if(Profile.UsesBiosFanControl)
+                Hw.Bios.SetFanLevel(new byte[] { Byte.MaxValue, Byte.MaxValue });
+            else
+                SetLevels(new byte[] { Byte.MaxValue, Byte.MaxValue });
+
             if(Config.FanLevelNeedManual && !Profile.UsesBiosFanControl)
                 SetManual(false);
             SetModeInternal(mode, true);
