@@ -81,40 +81,12 @@ namespace OmenMon {
                 } else {
 
 #region CLI (Console) Mode
-                    // If this is the first CLI instance,
-                    // relaunch as a console application
-                    bool isFirstInstance;
-                    using(Mutex mutex = new Mutex(
-                        true,
-                        Config.LockPathCli,
-                        out isFirstInstance)) {
-
-                        if(isFirstInstance) {
-
-                            // Relaunch the process as a console application
-                            Cli.Relaunch(args);
-
-                            // Release the lock when done
-                            mutex.ReleaseMutex();
-
-                            // Make the command prompt reappear
-                            Cli.RestorePrompt();
-
-                        } else {
-
-                            // Attach the console (which is detached by default)
-                            Cli.Initialize();
-
-                            // Output the header
-                            Cli.PrintHeader();
-
-                            // Process all command-line arguments
-                            // and perform the operations as requested
-                            CliOp.Loop(args);
-
-                        }
-
-                    }
+                    // Initialize once in this process; loading a second copy of the
+                    // assembly loses console state and duplicates exit handlers.
+                    Cli.Initialize();
+                    Cli.PrintHeader();
+                    CliOp.Loop(args);
+                    Cli.RestorePrompt();
 
                 }
 #endregion

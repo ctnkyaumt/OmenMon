@@ -18,6 +18,13 @@ namespace OmenMon.External {
         // Console manipulation
 
         public const uint ATTACH_PARENT_PROCESS = 0xFFFFFFFF;
+        public const int STD_OUTPUT_HANDLE = -11;
+
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr GetStdHandle(int handle);
+
+        [DllImport("kernel32.dll")]
+        public static extern uint GetFileType(IntPtr handle);
 
         // File operations
 

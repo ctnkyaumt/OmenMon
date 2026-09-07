@@ -331,7 +331,16 @@ namespace OmenMon.Hardware.Bios {
         // Updates the current speed level for each fan
         public void SetFanLevel(byte[] data) {
             // Note: this call will always check for BIOS error and throw an exception if it occurred
-            Check(Send(Cmd.Default, 0x2E, new byte[4] {(byte) data[0], (byte) data[1], 0x00, 0x00}), true);
+            Check(Send(Cmd.Default, 0x2E, CreateFanLevelPayload(data)), true);
+        }
+
+        internal static byte[] CreateFanLevelPayload(byte[] data) {
+            if(data == null || data.Length != 2)
+                throw new ArgumentException("Expected CPU and GPU fan levels.", nameof(data));
+            // Gaming Hub SetSwFanControlLevel uses the full 128-byte buffer.
+            byte[] payload = new byte[128];
+            Array.Copy(data, payload, data.Length);
+            return payload;
         }
 
         // Sets the active fan performance mode

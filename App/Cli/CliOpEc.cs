@@ -151,203 +151,150 @@ namespace OmenMon.AppCli {
         // optionally saving to a file as well
         private static void EcMon(string filename = null) {
             IsStop = false;
-
-            // Save the console color to be restored later
-            ConsoleColor originalColor = Console.ForegroundColor;
             bool interactive = !Console.IsInputRedirected && !Console.IsOutputRedirected;
-
-            // Set up the data array
-            var data = new EcMonData[256];
-
-            // Generate a writable, predictable default filename.
-            if(string.IsNullOrWhiteSpace(filename)) {
-                string logDirectory = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                    "OmenMon Logs");
-                try {
-                    Directory.CreateDirectory(logDirectory);
-                } catch {
-                    logDirectory = Path.GetTempPath();
-                }
-                filename = Path.Combine(logDirectory,
-                    "ecmon_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log");
-            }
-            filename = Path.GetFullPath(filename);
-
-            // Create an event handler to break out of the perpetual loop
-            Console.CancelKeyPress += (sender, eventArgs) => {
-                IsStop = true;
-                eventArgs.Cancel = true;
-            };
-
-            // Populate the data array with initial readings
-            for(int register = 0; register < data.Length; register++) {
-
-                data[register].Values = new List<byte>();
-                data[register].UserChangeIndex = new List<int>();
-                data[register].Values.Add(Hw.EcGetByte((byte) register));
-
-            }
-
-            // Display instructions
-            Console.WriteLine("Monitoring Embedded Controller...");
-            Console.WriteLine(interactive ?
-                "Press Ctrl+C, Enter, or Esc to stop and save log." :
-                "Press Ctrl+C to stop and save log.");
-            Console.WriteLine("Log file: " + filename);
-            Console.WriteLine();
+            ConsoleColor originalColor = ConsoleColor.Gray;
             if(interactive)
-                Thread.Sleep(1000);
-
-            // (Key checking is done inline in the main loop to avoid
-            // Console threading conflicts with Console.Clear)
-
-            // Track how many registers changed in this reading cycle
-            int readingIndex = 0;
-
-            // Path for the user change marker file
-            string markerFile = Path.Combine(Path.GetTempPath(), "OmenMon_UserChange.tmp");
-            // Path for a stop marker file (external way to stop)
-            string stopFile = Path.Combine(Path.GetTempPath(), "OmenMon_EcMon_Stop.tmp");
-            DateTime lastMarkerCheck = File.Exists(markerFile) ?
-                File.GetLastWriteTimeUtc(markerFile) : DateTime.MinValue;
-            try { if(File.Exists(stopFile)) File.Delete(stopFile); } catch { }
-
+                try { originalColor = Console.ForegroundColor; } catch { interactive = false; }
+            var data = new EcMonData[256];
+            ConsoleCancelEventHandler cancel = (sender, args) => {
+                IsStop = true;
+                args.Cancel = true;
+            };
+            Console.CancelKeyPress += cancel;
             try {
-                // Create the log immediately, then checkpoint it periodically.
-                SaveEcReport(data, filename);
+                if(string.IsNullOrWhiteSpace(filename)) {
+                    string directory = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "OmenMon Logs");
+                    try { Directory.CreateDirectory(directory); }
+                    catch { directory = Path.GetTempPath(); }
+                    filename = Path.Combine(directory, "ecmon_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".log");
+                }
+                filename = Path.GetFullPath(filename);
+                string markerFile = Path.Combine(Path.GetTempPath(), "OmenMon_UserChange.tmp");
+                string stopFile = Path.Combine(Path.GetTempPath(), "OmenMon_EcMon_Stop.tmp");
+                DateTime lastMarker = File.Exists(markerFile) ?
+                    File.GetLastWriteTimeUtc(markerFile) : DateTime.MinValue;
+                try { if(File.Exists(stopFile)) File.Delete(stopFile); } catch { }
 
-                while(!IsStop) { // Continually keep adding new data
+                for(int register = 0; register < data.Length; register++) {
+                    data[register].Values = new List<byte>();
+                    data[register].UserChangeIndex = new List<int>();
+                    data[register].Values.Add(Hw.EcGetByte((byte) register));
+                }
 
-                    readingIndex++;
-
-                    // Check for key presses (Esc or Enter to stop)
-                    if(interactive) try {
-                        while(Console.KeyAvailable) {
-                            var key = Console.ReadKey(true);
-                            if(key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.Enter) {
-                                IsStop = true;
-                                break;
-                            }
+                // Refuse to monitor without a usable output file.
+                if(!SaveEcReport(data, filename))
+                    return;
+                Console.WriteLine("Monitoring Embedded Controller...");
+                Console.WriteLine(interactive ? "Press Ctrl+C, Enter, or Esc to stop." : "Press Ctrl+C to stop.");
+                Console.WriteLine("Log file: " + filename);
+                int readingIndex = 0;
+                try {
+                    while(!IsStop) {
+                        if(interactive) {
+                            try {
+                                while(Console.KeyAvailable) {
+                                    ConsoleKey key = Console.ReadKey(true).Key;
+                                    if(key == ConsoleKey.Escape || key == ConsoleKey.Enter)
+                                        IsStop = true;
+                                }
+                            } catch { interactive = false; }
                         }
-                    } catch { }
-
-                    if(IsStop)
-                        break;
-
-                    // Stop via external marker
-                    if(File.Exists(stopFile)) {
-                        try { File.Delete(stopFile); } catch { }
-                        IsStop = true;
-                        break;
-                    }
-                    bool userChangedSettings = false;
-
-                    // Check if GUI/tray signaled a user change (check marker file)
-                    if(File.Exists(markerFile)) {
-                        try {
-                            DateTime markerTime = File.GetLastWriteTimeUtc(markerFile);
-                            // If marker was updated since last check, user made a change
-                            if(markerTime > lastMarkerCheck) {
-                                userChangedSettings = true;
-                                lastMarkerCheck = markerTime;
-                            }
-                        } catch { }
-                    }
-
-                    for(int register = 0; register < data.Length; register++) {
+                        if(File.Exists(stopFile)) {
+                            try { File.Delete(stopFile); } catch { }
+                            IsStop = true;
+                        }
                         if(IsStop)
                             break;
 
-                        byte value = Hw.EcGetByte((byte) register);
-                        byte previousValue = data[register].Values[data[register].Values.Count - 1];
-                    
-                        data[register].Values.Add(value);
-
-                        if(value != previousValue && userChangedSettings) {
-                            data[register].UserChangeIndex.Add(readingIndex);
+                        bool userChanged = false;
+                        try {
+                            if(File.Exists(markerFile)) {
+                                DateTime changed = File.GetLastWriteTimeUtc(markerFile);
+                                userChanged = changed > lastMarker;
+                                lastMarker = changed;
+                            }
+                        } catch { }
+                        readingIndex++;
+                        // Finish this sample even if cancellation arrives mid-scan.
+                        for(int register = 0; register < data.Length; register++) {
+                            byte value = Hw.EcGetByte((byte) register);
+                            byte previous = data[register].Values[data[register].Values.Count - 1];
+                            data[register].Values.Add(value);
+                            if(value != previous && userChanged)
+                                data[register].UserChangeIndex.Add(readingIndex);
+                            if(value != data[register].Values[0])
+                                data[register].Show = true;
                         }
-
-                        if(value != data[register].Values[0])
-                            data[register].Show = true; // Note the values that have changed
+                        if(interactive)
+                            Cli.PrintEcReport(data);
+                        if(readingIndex % 10 == 0 && !SaveEcReport(data, filename))
+                            break;
+                        Thread.Sleep(Config.EcMonInterval);
                     }
-
+                } finally {
                     if(interactive)
-                        Cli.PrintEcReport(data); // Update the report
-
-                    if(readingIndex % 10 == 0)
-                        SaveEcReport(data, filename);
-
-                    Thread.Sleep(Config.EcMonInterval); // at specified intervals
-
+                        try { Console.Clear(); } catch { }
+                    Console.WriteLine("Stopping monitor...");
+                    if(SaveEcReport(data, filename))
+                        Console.WriteLine("Saved log file to: " + filename);
                 }
             } finally {
+                Console.CancelKeyPress -= cancel;
                 if(interactive)
-                    try { Console.Clear(); } catch { }
-
-                Console.WriteLine("Stopping monitor...");
-                Console.WriteLine("Saved log file to: " + filename);
-                Console.WriteLine();
-                SaveEcReport(data, filename);
-
-                // Restore the console color to the original
-                Console.ForegroundColor = originalColor;
-
-                // Close the Embedded Controller
+                    try { Console.ForegroundColor = originalColor; } catch { }
                 Hw.Ec.Close();
             }
-
         }
 
-        // Saves the embedded controller monitoring report to a file
-        // Format matches documentation (#\Reg header, columns: registers; rows: time steps)
-        private static void SaveEcReport(EcMonData[] data, string filename) {
+        // Each checkpoint contains the baseline and all complete samples. A temporary
+        // file is flushed before atomically replacing the previous checkpoint.
+        private static bool SaveEcReport(EcMonData[] data, string filename) {
+            string temporary = null;
             try {
-                var report = new StringBuilder();
+                int rows = data.Length == 0 ? 0 : int.MaxValue;
+                foreach(EcMonData register in data)
+                    rows = Math.Min(rows, register.Values?.Count ?? 0);
+                if(rows == 0)
+                    throw new InvalidDataException("No complete EC sample.");
 
-                // Header
-                report.Append("#\\Reg  ");
-                for(int register = 0; register < data.Length; register++) {
-                    if(!data[register].Show)
-                        continue;
-                    report.Append(Conv.GetString((byte) register, 2, 16));
-                    report.Append(" ");
-                }
-                if(report[report.Length - 1] == ' ')
-                    report.Remove(report.Length - 1, 1);
+                var report = new StringBuilder("#\\Reg");
+                for(int register = 0; register < data.Length; register++)
+                    report.Append(" ").Append(Conv.GetString((byte) register, 2, 16));
                 report.AppendLine();
-
-                // Rows: nnnnn (time step) followed by values for shown registers
-                int rows = data[0].Values.Count;
                 for(int row = 0; row < rows; row++) {
-                    report.Append(Conv.GetString((uint) row, 5, 10));
-                    report.Append("  ");
+                    report.Append(Conv.GetString((uint) row, 5, 10)).Append(" ");
                     var userChanges = new List<string>();
                     for(int register = 0; register < data.Length; register++) {
-                        if(!data[register].Show)
-                            continue;
-                        report.Append(Conv.GetString(data[register].Values[row], 2, 16));
-                        // Record user-initiated change on this time step for later
-                        if(data[register].UserChangeIndex != null && data[register].UserChangeIndex.Contains(row))
-                            userChanges.Add(Conv.GetString((byte)register, 2, 16));
-                        report.Append(" ");
+                        report.Append(" ").Append(Conv.GetString(data[register].Values[row], 2, 16));
+                        if(data[register].UserChangeIndex?.Contains(row) == true)
+                            userChanges.Add(Conv.GetString((byte) register, 2, 16));
                     }
-                    if(report[report.Length - 1] == ' ')
-                        report.Remove(report.Length - 1, 1);
-
-                    // Append user changes as a comment to preserve column alignment
-                    if(userChanges.Count > 0) {
-                        report.Append("  // User change: ");
-                        report.Append(string.Join(", ", userChanges));
-                    }
-
+                    if(userChanges.Count > 0)
+                        report.Append("  // User change: ").Append(string.Join(", ", userChanges));
                     report.AppendLine();
                 }
 
-                // Write file (relative paths resolve to current working directory)
-                File.WriteAllText(filename, report.ToString());
-            } catch {
-                App.Error("ErrFileSave");
+                filename = Path.GetFullPath(filename);
+                temporary = filename + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                byte[] bytes = new UTF8Encoding(false).GetBytes(report.ToString());
+                using(var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write,
+                    FileShare.None, 4096, FileOptions.WriteThrough)) {
+                    file.Write(bytes, 0, bytes.Length);
+                    file.Flush(true);
+                }
+                if(File.Exists(filename))
+                    File.Replace(temporary, filename, null);
+                else
+                    File.Move(temporary, filename);
+                return true;
+            } catch(Exception e) {
+                Environment.ExitCode = 1;
+                App.Error("ErrFileSave", e);
+                return false;
+            } finally {
+                if(temporary != null)
+                    try { if(File.Exists(temporary)) File.Delete(temporary); } catch { }
             }
         }
 #endregion

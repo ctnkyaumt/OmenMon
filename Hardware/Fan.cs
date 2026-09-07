@@ -32,6 +32,7 @@ namespace OmenMon.Hardware.Platform {
 #region Implementation
         // Stores the fan type
         protected BiosData.FanType FanType;
+        private readonly bool UseBiosSpeed;
 
         // Stores the level data component
         protected IPlatformReadWriteComponent Level;
@@ -49,7 +50,10 @@ namespace OmenMon.Hardware.Platform {
             IPlatformReadWriteComponent level,
             IPlatformReadComponent rateRead,
             IPlatformWriteComponent rateWrite,
-            IPlatformReadComponent speed) {
+            IPlatformReadComponent speed,
+            bool useBiosSpeed = false) {
+
+            this.UseBiosSpeed = useBiosSpeed;
 
             this.FanType = type;
             this.Level = level;
@@ -73,12 +77,16 @@ namespace OmenMon.Hardware.Platform {
 
         // Retrieves the fan rate [%]
         public virtual int GetRate() {
+            if(UseBiosSpeed)
+                return Math.Min(100, Math.Max(0, GetLevel() * 100 / Math.Max(1, Config.FanLevelMax)));
             this.RateRead.Update();
             return this.RateRead.GetValue();
         }
 
         // Retrieves the fan speed [rpm]
         public virtual int GetSpeed() {
+            if(UseBiosSpeed)
+                return GetLevel() * 100;
             this.Speed.Update();
             return this.Speed.GetValue();
         }

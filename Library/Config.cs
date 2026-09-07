@@ -58,6 +58,42 @@ namespace OmenMon.Library {
 
         }
 
+        public static void ResolveTemperatureSensors(PlatformProfile profile) {
+            OrderedDictionary resolved = new OrderedDictionary();
+            bool usable = false;
+            if(TemperatureSensorCustomized) {
+                foreach(System.Collections.DictionaryEntry entry in TemperatureSensor) {
+                    string name = (string) entry.Key;
+                    TemperatureSensorData sensor = (TemperatureSensorData) entry.Value;
+                    if(sensor.ResolveFromProfile) {
+                        byte register;
+                        if(!profile.TryGetTemperatureRegister(name, out register)) {
+                            EmbeddedControllerData.Register legacy;
+                            if(!Enum.TryParse(name, out legacy) || !Enum.IsDefined(typeof(EmbeddedControllerData.Register), legacy))
+                                continue;
+                            register = (byte) legacy;
+                        }
+                        sensor.Register = register;
+                        sensor.ResolveFromProfile = false;
+                    }
+                    // The old fork called EST2 an SSD sensor without evidence.
+                    if(profile.UsesBiosFanControl && name == "SSD" &&
+                        sensor.Source == PlatformData.LinkType.EmbeddedController && sensor.Register == 0xB7)
+                        name = "SYS";
+                    resolved[name] = sensor;
+                    usable |= sensor.Use;
+                }
+            }
+            if(!usable) {
+                TemperatureSensorCustomized = false;
+                resolved.Clear();
+                foreach(TemperatureProfile sensor in profile.Temperature)
+                    resolved[sensor.Name] = new TemperatureSensorData(
+                        PlatformData.LinkType.EmbeddedController, sensor.Register, sensor.Use);
+            }
+            TemperatureSensor = resolved;
+        }
+
         // Initializes the locale system
         public static bool LocaleInit() {
 
@@ -291,57 +327,44 @@ namespace OmenMon.Library {
                         + Conv.GetColorStringRtf(GuiColorWarmLite)                // Fuchsia
                         + "}";
 
-                    // Load the temperature sensors
+                    // Explicit registers survive save/reload; symbolic names are
+                    // resolved later, after selecting the product's profile.
                     bool usable = false;
-                    OrderedDictionary TemperatureSensorXml = new OrderedDictionary();
+                    OrderedDictionary sensors = new OrderedDictionary();
                     foreach(XmlNode node in xml.SelectNodes(XmlPrefixTemperatureSensor)) {
-                        // Invalid entries will be discarded at this step
+                        if(sensors.Count >= TemperatureSensorMax)
+                            break;
                         try {
-                            // Extract sensor name
-                            string sensorName = node.Attributes[XmlAttrTemperatureSensorName].Value;
-                            
-                            // Process all supported sensors
-                            if (sensorName == "CPUT" || sensorName == "CPU" || sensorName == "GPU" || sensorName == "SSD") {
-                                // Set the optional use flag
-                                bool use = true;
-                                try {
-                                    Conv.GetBool(node.Attributes[XmlAttrTemperatureSensorUse].Value, out use);
-                                } catch {  }
-
-                                // Check for Embedded Controller sensor source
-                                if(node.Attributes[XmlAttrTemperatureSensorSource].Value
-                                    == XmlAttrTemperatureSensorSourceValueEc)
-                                {
-                                    // Determine register mapping (handle custom keys like 'GPU')
-                                    byte register;
-                                    if(TemperatureSensor.Contains(sensorName)) {
-                                        register = ((TemperatureSensorData)TemperatureSensor[sensorName]).Register;
-                                    } else if(sensorName == "CPU" && TemperatureSensor.Contains("CPUT")) {
-                                        // Special case for CPU -> CPUT mapping
-                                        register = ((TemperatureSensorData)TemperatureSensor["CPUT"]).Register;
-                                    } else {
-                                        register = (byte) Enum.Parse(typeof(EmbeddedControllerData.Register), sensorName);
-                                    }
-
-                                    // Add the EC sensor using the resolved register
-                                    TemperatureSensorXml[sensorName] =
-                                        new TemperatureSensorData(
-                                            PlatformData.LinkType.EmbeddedController,
-                                            register, use);
-                                }
-
-                                // Record found usable
-                                if(use) usable = true;
+                            string name = node.Attributes[XmlAttrTemperatureSensorName].Value;
+                            if(string.IsNullOrWhiteSpace(name))
+                                continue;
+                            bool use = true;
+                            if(node.Attributes[XmlAttrTemperatureSensorUse] != null)
+                                Conv.GetBool(node.Attributes[XmlAttrTemperatureSensorUse].Value, out use);
+                            string source = node.Attributes[XmlAttrTemperatureSensorSource].Value;
+                            TemperatureSensorData sensor;
+                            if(source == XmlAttrTemperatureSensorSourceValueEc) {
+                                string registerText = node.Attributes[XmlAttrTemperatureSensorRegister]?.Value;
+                                byte register = 0;
+                                if(registerText != null && !Conv.GetByte(registerText, out register))
+                                    continue;
+                                sensor = new TemperatureSensorData {
+                                    Source = PlatformData.LinkType.EmbeddedController,
+                                    Register = register, Use = use,
+                                    ResolveFromProfile = registerText == null
+                                };
+                            } else if(source == XmlAttrTemperatureSensorSourceValueBios) {
+                                sensor = new TemperatureSensorData(PlatformData.LinkType.WmiBios, use);
+                            } else {
+                                continue;
                             }
+                            sensors[name] = sensor;
+                            usable |= use;
                         } catch { }
                     }
-
-                    // Replace the defaults with configured temperature sensors unless none
-                    // were configured or not a single sensor was set to actually be used
-                    if(TemperatureSensorXml.Count > 0 && usable) {
-                        TemperatureSensor = TemperatureSensorXml;
-                        TemperatureSensorCustomized = true;
-                    }
+                    TemperatureSensorCustomized = sensors.Count > 0 && usable;
+                    if(TemperatureSensorCustomized)
+                        TemperatureSensor = sensors;
 
                     // Load the fan programs
                     foreach(XmlNode node in xml.SelectNodes(XmlPrefixFanProgram)) {
@@ -539,24 +562,19 @@ namespace OmenMon.Library {
                     // Remove all currently-defined sensor entries
                     xmlTemperature.RemoveAll();
 
-                    // Iterate through the sensor entries
                     foreach(System.Collections.DictionaryEntry entry in TemperatureSensor) {
-                        string name = (string)entry.Key;
-                        // Save CPU, GPU and SSD sensors
-                        if (name == "CPUT" || name == "CPU" || name == "GPU" || name == "SSD") {
-                            // Create an element for each sensor
-                            XmlElement node = (XmlElement) xmlTemperature.AppendChild(
-                                    xml.CreateElement(XmlElementTemperatureSensor));
-
-                            // Store the preset name and source in attributes
-                            node.SetAttribute(XmlAttrTemperatureSensorName, name);
-                            node.SetAttribute(XmlAttrTemperatureSensorSource,
-                                ((TemperatureSensorData)entry.Value).Source == PlatformData.LinkType.EmbeddedController ?
-                                    XmlAttrTemperatureSensorSourceValueEc : XmlAttrTemperatureSensorSourceValueBios);
-
-                            if(!((TemperatureSensorData)entry.Value).Use)
-                                node.SetAttribute(XmlAttrTemperatureSensorUse, XmlSaveBoolFalse);
-                        }
+                        string name = (string) entry.Key;
+                        TemperatureSensorData sensor = (TemperatureSensorData) entry.Value;
+                        XmlElement node = (XmlElement) xmlTemperature.AppendChild(
+                            xml.CreateElement(XmlElementTemperatureSensor));
+                        node.SetAttribute(XmlAttrTemperatureSensorName, name);
+                        node.SetAttribute(XmlAttrTemperatureSensorSource,
+                            sensor.Source == PlatformData.LinkType.EmbeddedController ?
+                                XmlAttrTemperatureSensorSourceValueEc : XmlAttrTemperatureSensorSourceValueBios);
+                        if(sensor.Source == PlatformData.LinkType.EmbeddedController && !sensor.ResolveFromProfile)
+                            node.SetAttribute(XmlAttrTemperatureSensorRegister, "0x" + sensor.Register.ToString("X2"));
+                        if(!sensor.Use)
+                            node.SetAttribute(XmlAttrTemperatureSensorUse, XmlSaveBoolFalse);
                     }
 
                     // The remaining configuration values

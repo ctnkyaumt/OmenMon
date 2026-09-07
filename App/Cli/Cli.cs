@@ -3,9 +3,6 @@
      //  https://omenmon.github.io/
 
 using System;
-using System.Diagnostics;
-using System.IO;
-using System.Reflection;
 using OmenMon.External;
 using OmenMon.Hardware.Bios;
 using OmenMon.Hardware.Ec;
@@ -21,11 +18,6 @@ namespace OmenMon.AppCli {
         public static bool IsPowerShell { get; private set; }
 
         private static ConsoleColor OriginalBackgroundColor;
-
-        // Portable Executable (PE) Common Object File Format (COFF) header constants
-        private const UInt16 IMAGE_OPTIONAL_HEADER_SUBSYSTEM = 0x00DC;
-        private const byte IMAGE_SUBSYSTEM_WINDOWS_GUI = 0x02;
-        private const byte IMAGE_SUBSYSTEM_WINDOWS_CUI = 0x03;
 
         // Setting flags for printing numerical values
         // Note: not all flag combinations are implemented for all data types
@@ -66,111 +58,63 @@ namespace OmenMon.AppCli {
 #region Initialization & Termination Methods
         // Enables a Windows Forms (GUI) app
         // to work with console (with some caveats)
+        private static bool OwnsConsole;
+        private static bool InteractiveConsole;
+
         public static void Initialize() {
+            IsInitialized = true; // Initialization errors belong on stderr, not in a dialog.
+            uint outputType = Kernel32.GetFileType(
+                Kernel32.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE));
+            bool redirected = outputType == 1 || outputType == 3; // Disk or pipe.
 
-            // Attach to console window, which may modify the standard handles
-            if(!Kernel32.AttachConsole(Kernel32.ATTACH_PARENT_PROCESS))
-                Kernel32.AllocConsole(); // Using an attached console
-            else { // Using an existing console
+            if(!redirected) {
+                OwnsConsole = Kernel32.AttachConsole(Kernel32.ATTACH_PARENT_PROCESS);
+                if(!OwnsConsole)
+                    OwnsConsole = Kernel32.AllocConsole();
+            }
 
-                // Save the original background color and set it to black
+            InteractiveConsole = !Console.IsInputRedirected && !Console.IsOutputRedirected;
+            if(!InteractiveConsole)
+                return;
+
+            try {
                 OriginalBackgroundColor = Console.BackgroundColor;
                 Console.BackgroundColor = ConsoleColor.Black;
-
-                // Check if we are using a PowerShell console
-                if(Os.IsConsolePowerShell()) {
-
-                    IsPowerShell = true;
-
-                    // Basic workaround only
-                    Console.Clear();
-
-                } else {
-
-                    // Clear the last two rows, and make sure we end up
-                    // at the first column of the row before the last one
-                    Console.Error.Write("\r" + new string(' ', Console.BufferWidth));
-                    Console.SetCursorPosition(0, Console.CursorTop == 0 ? 0 : Console.CursorTop - 1);
-                    Console.Write("\r" + new string(' ', Console.BufferWidth) + "\r");
-
-                }
-    
+                IsPowerShell = Os.IsConsolePowerShell();
+                Console.Clear();
+            } catch {
+                InteractiveConsole = false;
             }
-
-            IsInitialized = true;
-       }
-
-        // Releases the console when no longer needed
-        public static void Close() {
-
-            // Try to move the cursor to the bottom of the window,
-            // which does not happen automatically in a PowerShell session
-            if(IsPowerShell)
-                try {
-                    Console.SetCursorPosition(0,
-                        Console.WindowHeight >= Console.BufferHeight ?
-                            Console.BufferHeight - 1 : Console.WindowHeight);
-                } catch {
-                }
-
-            // Restore the original background color
-            Console.BackgroundColor = OriginalBackgroundColor;
-
-            IsInitialized = false;
-            Kernel32.FreeConsole();
-
         }
 
-        // Relaunches the process as a console application
-        public static void Relaunch(string[] args) {
-            byte[] data;
-
-            // Read the image of our own process into an array
-            using(FileStream dataIn = new FileStream(
-                Config.AppFile,
-                FileMode.Open, FileAccess.Read)) {
-
-                data = new byte[dataIn.Length];
-                dataIn.Read(data, 0, data.Length);
-
-            }
-
-            // Modify the PE header to run as a console application
-            data[IMAGE_OPTIONAL_HEADER_SUBSYSTEM] = IMAGE_SUBSYSTEM_WINDOWS_CUI;
-
-            // Launch ourselves again
-            Assembly ass = Assembly.Load(data);
-            MethodInfo m = ass.EntryPoint;
-            m.Invoke(null, new[] { args });
-
-            // Note: this is still not enough to run as a proper console application
-            // Would need to launch a separate process or perhaps Assembly.LoadFile()
-
+        // Release only a console this instance attached or allocated.
+        public static void Close() {
+            if(InteractiveConsole)
+                try { Console.BackgroundColor = OriginalBackgroundColor; } catch { }
+            IsInitialized = false;
+            if(OwnsConsole)
+                Kernel32.FreeConsole();
         }
 
         // Makes the command prompt reappear when the application is done in CLI mode
         public static void RestorePrompt() {
-
-            // Skip if a PowerShell session
-            if(!Os.IsConsolePowerShell()) {
-
-                // Make the command prompt appear again
-                // by simulating a keystroke (an ugly hack)
-                Console.CursorTop -= 1; // Go back one row to avoid leaving blank space
-                User32.SendMessage(
-                    Kernel32.GetConsoleWindow(),
-                    User32.WM_CHAR,
-                    (IntPtr) User32.VK_ENTER,
-                    IntPtr.Zero);
-
-            }
-
+            if(!InteractiveConsole || IsPowerShell)
+                return;
+            try {
+                Console.CursorTop = Math.Max(0, Console.CursorTop - 1);
+                User32.SendMessage(Kernel32.GetConsoleWindow(), User32.WM_CHAR,
+                    (IntPtr) User32.VK_ENTER, IntPtr.Zero);
+            } catch { }
         }
 #endregion
 
 #region Output Methods - General
         // Outputs a string in a given color, then reverts back to the original color
         public static void PrintColor(ConsoleColor color, string text) {
+            if(!InteractiveConsole) {
+                Console.Write(text);
+                return;
+            }
             ConsoleColor originalColor = Console.ForegroundColor;
             Console.ForegroundColor = color;
             Console.Write(text);

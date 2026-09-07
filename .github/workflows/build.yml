@@ -133,6 +133,14 @@ jobs:
         -p:Configuration=${{matrix.configuration}}
         -t:Build ${{ env.SOLUTION_FILE }}
 
+    - name: "Run hardware-free regression tests"
+      shell: powershell
+      run: |
+        msbuild Tests/Regression.csproj -noLogo "-p:AppBinDir=$env:GITHUB_WORKSPACE\$env:BIN_DIR"
+        if ($LASTEXITCODE -ne 0) { throw "Regression test build failed" }
+        & .\Tests\Bin\OmenMon.Regression.exe "$env:GITHUB_WORKSPACE\$env:BIN_DIR\OmenMon.exe"
+        if ($LASTEXITCODE -ne 0) { throw "Regression tests failed" }
+
     - name: "Retrieve Certificate"
       id: cert_retrieve
       continue-on-error: true

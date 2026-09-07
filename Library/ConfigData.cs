@@ -319,6 +319,7 @@ namespace OmenMon.Library {
             // Resolved numerical value
             // to be passed to the source
             public byte Register;
+            public bool ResolveFromProfile;
 
             // Where the data originates from
             public PlatformData.LinkType Source;
@@ -343,6 +344,7 @@ namespace OmenMon.Library {
 
                 // Set the structure data
                 this.Source = source;
+                this.ResolveFromProfile = false;
                 this.Register = register;
                 this.Use = use;
 
@@ -357,23 +359,7 @@ namespace OmenMon.Library {
 
         // Temperature sensors (overriden at runtime if found in the configuration file)
         public static bool TemperatureSensorCustomized = false;
-        public static OrderedDictionary TemperatureSensor = new OrderedDictionary() {
-            {
-                "CPUT", new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    0xB0) // Value 0x27 (39°C) for CPU temperature
-            },
-            {
-                "GPU", new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    0xB4) // New EC address
-            },
-            {
-                "SSD", new TemperatureSensorData(
-                    PlatformData.LinkType.EmbeddedController,
-                    0xB7)
-            }
-        };
+        public static OrderedDictionary TemperatureSensor = new OrderedDictionary();
 
         // Maximum number of temperature sensors
         public const int TemperatureSensorMax = 9;
@@ -435,6 +421,7 @@ namespace OmenMon.Library {
         private const string XmlAttrTemperatureSensorSourceValueBios = "BIOS";
         private const string XmlAttrTemperatureSensorSourceValueEc = "EC";
         private const string XmlAttrTemperatureSensorUse = "Use";
+        private const string XmlAttrTemperatureSensorRegister = "Register";
         private const string XmlElementConfig = "Config";
         private const string XmlElementKeyCustomAction = "KeyCustomAction";
 

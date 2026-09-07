@@ -70,7 +70,7 @@ namespace OmenMon.Hardware.Platform {
                                 new EcComponent(
                                     ec.Fan0Rpm,
                                     PlatformData.AccessType.Read,
-                                    PlatformData.DataSize.Word)),
+                                    PlatformData.DataSize.Word), this.Profile.UsesBiosFanControl),
 
                             // Define the GPU fan
                             new Fan(
@@ -87,7 +87,7 @@ namespace OmenMon.Hardware.Platform {
                                 new EcComponent(
                                     ec.Fan1Rpm,
                                     PlatformData.AccessType.Read,
-                                    PlatformData.DataSize.Word)) },
+                                    PlatformData.DataSize.Word), this.Profile.UsesBiosFanControl) },
 
                         // Define the countdown component
                         new EcComponent(
@@ -121,16 +121,7 @@ namespace OmenMon.Hardware.Platform {
         // Initializes the temperature controls
         private void InitTemperature() {
 
-            // Use per-product defaults unless the XML supplied a usable list.
-            if(!Config.TemperatureSensorCustomized) {
-                Config.TemperatureSensor = new OrderedDictionary();
-                foreach(TemperatureProfile sensor in this.Profile.Temperature)
-                    Config.TemperatureSensor[sensor.Name] =
-                        new Config.TemperatureSensorData(
-                            PlatformData.LinkType.EmbeddedController,
-                            sensor.Register,
-                            sensor.Use);
-            }
+            Config.ResolveTemperatureSensors(this.Profile);
 
             // Set up the temperature sensor array based on the configuration data
             this.Temperature = new IPlatformReadComponent[Config.TemperatureSensor.Count];
@@ -162,8 +153,9 @@ namespace OmenMon.Hardware.Platform {
 
                     // Add a WMI BIOS sensor
                     case PlatformData.LinkType.WmiBios:
-                        this.Temperature[i++] =
-                            new WmiBiosTemperatureComponent(Config.MaxBelievableTemperature);
+                        var biosSensor = new WmiBiosTemperatureComponent(Config.MaxBelievableTemperature);
+                        biosSensor.SetName(name);
+                        this.Temperature[i++] = biosSensor;
                         break;
 
                 }

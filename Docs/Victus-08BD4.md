@@ -1,99 +1,144 @@
-# HP Victus 08BD4 analysis and validation
+# HP Victus 08BD4 reference audit and validation
 
-This note separates findings that are proven by the supplied firmware or HP
-software from behavior that still needs to be checked on the laptop.
+## Inputs inspected on 2026-09-07
 
-## Inputs
+User-supplied files in REF_PC:
 
-- `08BD4.bin`, 16,777,216 bytes, SHA-256
-  `79C6D0E47B79DF2E68ED38B91C2A2AE865362682CBD64C1EA8ECE4C64C7030D0`
-- OMEN Gaming Hub MSIX `1101.2607.3.0`, SHA-256
-  `F050487BD586510A7A2B4090E1A09BAD544DA523CE3396CA791EC95A22A8954F`
-- ACPI tables were extracted from the Insyde image and decompiled with Intel
-  ACPICA `iasl` 20260408.
-- Selected managed HP assemblies were inspected with
-  `tools/Disassemble-ManagedIl.ps1`.
+- 08BD4.bin, 16,777,216 bytes, SHA-256
+  79C6D0E47B79DF2E68ED38B91C2A2AE865362682CBD64C1EA8ECE4C64C7030D0.
+- OMEN Gaming Hub MSIX 1101.2608.3.0, SHA-256
+  27B078A65B7476E59C276D87BE9C3F927D9A181D9BFF2B13FB7398C3401ADF68.
+  This is newer than the 1101.2607.3.0 package used for the earlier changes.
+- UEFIExtract A75 extracted firmware sections. Fourteen distinct ACPI tables
+  passed length/checksum validation and were decompiled with ACPICA iasl
+  20260408.
+- ILSpyCmd 9.1.0 inspected HP.Omen.Core.Common, HP.Omen.Core.Model.Device,
+  HP.Omen.Background.PerformanceControl and SystemVitals.
+  Proprietary binaries and decompiled code are not included in this repository.
 
-## Firmware-confirmed behavior
+## Fan control
 
-### Performance mode (`0x20008`, command `0x1A`)
+The WMITable SSDT dispatches command group 0x20008 to these handlers:
 
-The 08BD4 `GC1A` handler reads input byte 1, stores only bit 0 in `OGHM`, and
-notifies the platform. Consequently, `0x30` and `0x31` are the meaningful
-Balanced/Performance pair on the current thermal policy. Values whose low bit
-is identical are aliases on this BIOS; presenting every historical Omen mode
-would imply distinctions the firmware does not implement.
+| Handler | Evidence | Consequence |
+| --- | --- | --- |
+| GC1A | Input byte 1 contributes only bit 0 to OGHM; then notifies NPCF | 0x30 Default/Balanced and 0x31 Performance are distinct. Other low-bit aliases are not extra modes. |
+| GC26 | Compares actual fan levels with maximum fan-table values | Max readback is an RPM comparison, not an authoritative control-mode latch. |
+| GC27 | Writes maximum table values only for input byte 0 = 1; no off branch | Max off alone reports success without restoring automatic control. |
+| GC2D | EC commands 0x20/0x21, first two bytes of a 128-byte result | Use WMI actual fan levels, in units of 100 RPM, on this board. |
+| GC2E | Passes the first two input bytes to EC commands 0x22/0x23 | Fan targets are CPU then GPU; flat EC writes are not an equivalent verified interface. |
 
-Input byte 2 is accepted by HP's current software as the
-`fanControlByBios` flag. The 08BD4 handler does not currently inspect that byte,
-but OmenMon sends it when restoring Auto so the call also remains correct for
-HP firmware that does.
+HP's PerformanceControlHelper.SetSwFanControlLevel sends a **128-byte**
+input buffer to 0x2E, not the four-byte buffer previously used by OmenMon.
+Unused bytes are zero.
 
-### Maximum fan (`0x20008`, commands `0x26` and `0x27`)
+SetFanMode sends [255, mode, fanControlByBios, 0]. The 8BD4 handler ignores
+the third byte, although other firmware may use it. HP's ApplySettings applies
+the mode before MaxFan. Its software fan controller subsequently writes targets.
 
-`GC27` writes the maximum CPU/GPU fan-table values only when input byte 0 is
-`1`. It has no `0`/off branch and still returns success. Therefore, calling
-`SetMaxFan(false)` alone cannot restore Auto on this firmware.
+On the laptop, the previous mode + Max-off sequence left fans near 5800/6100 RPM
+at idle. Explicitly releasing targets with [255,255] before that sequence
+restored about 2300/2600 RPM. Therefore OmenMon's Auto path now:
 
-HP's current client reapplies the performance/fan-control mode before sending
-MaxFan off. OmenMon now follows that sequence through `RestoreAutomatic`:
+1. Releases both targets with 0x2E, using the full HP payload.
+2. Sends the requested mode with the firmware-control flag.
+3. Sends Max off for compatibility with firmware that implements it.
 
-1. Send command `0x1A` with the requested mode and firmware-control flag.
-2. Send command `0x27` with off for compatibility with models that implement
-   that branch.
+The release interpretation is supported by the laptop test and the existing
+OmenMon protocol; the BIOS wrapper itself merely forwards the target bytes.
+The revised binary still needs another physical Max -> Auto test.
 
-### Fixed fan levels (`0x2D` and `0x2E`)
+All GUI and fan-program exit paths use RestoreAutomatic. Choosing the same
+mode in the tray also restores Auto and stops a running program. Fixed speed
+is applied after mode/power notifications. The GUI does not continually reapply
+mode based on an unverified Victus EC countdown, which could undo fixed speed.
 
-`GC2E` sends the two supplied bytes to internal EC commands `0x22` and `0x23`.
-There is no firmware evidence that arbitrary flat EC addresses share those
-semantics, so automatic address probing is not used.
+Victus ignores legacy XML options requesting raw EC fan control/manual toggles.
+Unknown manual/countdown registers are not accessed through these controls.
+Other profiles retain their original EC behavior. WMI failures in Victus fan
+target writes are surfaced rather than silently claiming success.
 
-### Keyboard (`0x20009`)
+## Power controls
 
-The firmware's color-table read handler reports `ZoneCount = 3` and returns
-four color slots even though this Victus keyboard has one physical zone. Zone
-count therefore cannot detect the physical layout. Baseboard product `8BD4`
-is explicitly profiled as single-zone while the four identical color slots are
-retained in the WMI payload.
+GC21 reads [CTGP, DTGP, DTCL + 1, GPSV]. GC22 consumes all four bytes,
+including the final GPU temperature threshold; zero is not an omitted value.
+Gaming Hub's SetTgpPpabAsync sends **87** in this field. OmenMon's GPU presets
+now do the same instead of writing a 0-degree threshold.
 
-HP Gaming Hub writes the color table before enabling brightness/backlight.
-OmenMon now uses the same ordering; this is the likely fix for software control
-requiring one initial press of the physical keyboard-light key.
+| OmenMon preset | Custom TGP | PPAB | DState | Threshold |
+| --- | --- | --- | --- | --- |
+| Minimum | Off | Off | D1 | 87 C |
+| Medium | On | Off | D1 | 87 C |
+| Maximum | On | On | D1 | 87 C |
 
-## EC profile and safety boundary
+Raw readback/restoration retains all original bytes, including a different
+threshold if the firmware supplied one. GPU power writes invalidate cached
+readback so later comparisons can detect firmware changes.
 
-OmenMon selects an EC layout from `Win32_BaseBoard.Product`:
+These presets control TGP/PPAB flags; they do not specify fixed watts and are
+not replacements for every Gaming Hub power plan. HP's Eco and Windows power
+plan synchronization include additional software policy. Two firmware modes
+remain exposed for 8BD4. Actual power/performance effects require load testing.
 
-- `8BD4`: the Victus readings found during EC monitoring (fan RPM `0x6C` and
-  `0x70`; default temperature sensors `0xB0`, `0xB2`, and display-only `0xB7`).
-- Other products: the original OmenMon 08A13/08A14-compatible layout.
+## Temperatures
 
-The profile is deterministic and inspectable. It does not write test values to
-unknown registers. A BIOS image can reveal ACPI/WMI handlers, but it cannot
-reliably prove the meaning of every byte exposed through a runtime flat EC
-window. New writable mappings should be added only after a read-only EC log and
-a controlled, reversible device test.
+Gaming Hub's SystemPerformanceHelper uses CPU package temperature from its
+CPU status provider, with a CPU SDK fallback. GetGpuTemperatureV2 uses GPU
+driver/SDK providers (NVAPI for NVIDIA). These are different sources from
+OmenMon's flat EC sensors and can update at different rates.
 
-## Laptop test checklist
+The BIOS identifies CTMP, EST3, and EST2 fields. GC23 returns EST3 for
+selector 1 and EST2 otherwise; it does not return CPU package temperature.
+The DSDT's EC-memory offsets are not themselves proof of flat register mapping.
 
-Test on AC power, with HP Gaming Hub fully exited so both programs do not race.
-Keep the machine idle and watch temperatures during fan tests.
+Retain laptop-observed EC defaults: CPU 0xB0, GPU 0xB2, display-only SYS
+0xB7. There is no reference evidence proving EST2 is the SSD, so the old SSD
+label is migrated to SYS. Zero/unavailable GUI readings display a dash.
+No guessed offset or calibration is used to force agreement with Gaming Hub.
 
-1. Start OmenMon and confirm System Information reports product `8BD4`.
-2. Select Max, wait for RPM to stabilize, then select Auto/Default. RPM should
-   leave maximum and respond to temperature again within about 30 seconds.
-3. Repeat Constant -> Auto and Fan Program -> Auto.
-4. Repeat Max -> Auto/Performance, then Auto/Default. The two modes should be
-   the only performance choices shown.
-5. Start an EC log, perform one transition at a time, and stop with Ctrl+C or
-   Enter. The absolute save path is printed and the file is checkpointed every
-   ten samples.
-6. With keyboard lighting initially off after a cold boot, turn it on in
-   OmenMon without first pressing the physical key. Change the color and turn
-   it off/on again. The GUI should show one color value and no zone dividers.
-7. Record the `-Bios System`, `-Bios FanLevel`, `-Bios MaxFan`, and EC log
-   outputs before and after each transition. Do not use arbitrary `-Ec ... =`
-   writes while discovering registers.
+Configuration now stores explicit EC register addresses. Without them, the old
+save/restart path changed GPU 0xB2 into global-default 0xB4. Older symbolic
+names resolve after product selection; custom and BIOS sensors survive saving.
 
-Power/TGP controls are still only statically matched to the HP WMI commands;
-their visible effect cannot be confirmed without the laptop and a load test.
+## Keyboard
+
+The firmware reports ZoneCount 3 and four color slots even though this device
+has one physical zone. Product 8BD4 remains explicitly single-zone. All slots
+carry the same chosen color; color is written before enabling backlight.
+
+The previous build passed physical green/off/restoration testing. Cold-boot
+activation without pressing the keyboard-light key first remains unverified.
+
+## EC logging and automated checks
+
+Redirected CLI execution now initializes once without loading a second copy of
+the application or assuming console cursor operations work. EC reports include
+the full baseline and only complete samples. Each checkpoint is flushed to a
+sibling temporary file before atomic replacement. A failed write preserves the
+previous checkpoint and reports failure; cancellation detaches its handler.
+
+The GitHub build runs Tests/Regression.cs against the compiled application:
+fan protocol payload/order and failure behavior, legacy manual release, WMI
+RPM, GPU presets, fresh-process sensor reload, custom/legacy sensors, fan-program
+suspend/terminate restoration, partial/locked log files and redirected help.
+These tests use mocks and never open hardware interfaces.
+
+The workflow is manual/callable; pushing alone does not start it. Dispatch
+OmenMon Build after pushing. No local build is required.
+
+## Laptop checks for the new artifact
+
+1. At idle, Max -> Auto/Default, then Max -> Auto/Performance -> Default.
+   Allow approximately 30 seconds for RPM to settle; do not treat Max readback
+   alone as proof of automatic mode.
+2. Constant -> Auto and Fan Program -> Auto, both from the main window and tray.
+   Confirm fixed targets remain steady across GUI refreshes.
+3. Save settings, restart, and confirm CPU/GPU sensor addresses/readings persist.
+   Compare EC versus Gaming Hub CPU-package/GPU-driver readings under the same
+   workload, accounting for their different sources.
+4. Check GPU preset readbacks and behavior under a representative load.
+5. Start/stop an EC log with redirected output and verify a complete saved file.
+6. After a cold boot, change keyboard color/on/off without pressing its key first.
+
+Only one fan-control application should be actively changing settings during
+comparisons. The automated checks do not prove real-device timing or load behavior.

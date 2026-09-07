@@ -174,6 +174,7 @@ namespace OmenMon.Hardware.Platform {
         // Sets the GPU power (Custom TGP & PPAB)
         public void SetGpuPower(BiosData.GpuPowerData value) {
             Hw.BiosSetStruct(Hw.Bios.SetGpuPower, value);
+            this.GpuPower = null; // The next display/query must read the new state.
         }
 
         // Queries the Processing Power AI Boost state

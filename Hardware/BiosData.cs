@@ -419,7 +419,8 @@ namespace OmenMon.Hardware.Bios {
                 CustomTgp = Level == GpuPowerLevel.Minimum ? GpuCustomTgp.Off : GpuCustomTgp.On;
                 Ppab = Level == GpuPowerLevel.Maximum ? GpuPpab.On : GpuPpab.Off;
                 DState = GpuDState.D1;
-                PeakTemperature = 0;
+                // HP SetTgpPpabAsync uses 87C; zero changes the firmware threshold.
+                PeakTemperature = 87;
             }
 
             // Initializes the GPU power state structure from a data array

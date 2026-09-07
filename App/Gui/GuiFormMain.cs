@@ -295,15 +295,9 @@ namespace OmenMon.AppGui {
                 // Terminate any running fan program
                 Context.Op.Program.Terminate();
 
-                if(!isFanMax) { // Skip if already maximum speed
-
-                     if(isFanOff) // Re-enable fan if off first
-                         Context.Op.Platform.Fans.SetOff(false);
-
-                     // Set the fan to maximum speed
-                     Context.Op.Platform.Fans.SetMax(true);
-
-                }
+                // MaxFan readback describes current RPM, not a latched mode.
+                // Reapply after terminating a program even if RPM is still high.
+                Context.Op.Platform.Fans.SetMax(true);
 
             // Enable fan constant speed
             } else if(this.RdoFanConst.Checked) {
@@ -327,8 +321,7 @@ namespace OmenMon.AppGui {
                     && this.TrkFan1Lvl.Value == this.TrkFan1Lvl.Maximum) {
 
                     // Set the fans to maximum speed
-                    if(!isFanMax) // If not already at maximum speed
-                        Context.Op.Platform.Fans.SetMax(true);
+                    Context.Op.Platform.Fans.SetMax(true);
 
                 // Otherwise, we just set the speed levels normally
                 } else {
@@ -339,6 +332,9 @@ namespace OmenMon.AppGui {
                     if(isFanOff) // Re-enable fan if off first
                         Context.Op.Platform.Fans.SetOff(false);
 
+                    // Apply the mode first: its firmware notification may reset levels.
+                    Context.Op.Platform.Fans.SetMode(Context.Op.Platform.Fans.GetMode());
+
                     // Set each fan to the user-selected level
                     // or to zero, if the minimum value is selected
                     Context.Op.Platform.Fans.SetLevels(new byte[] {
@@ -347,9 +343,7 @@ namespace OmenMon.AppGui {
                     // Note: this won't work for setting both fans to zero
                     // but that case will have already been handled at this point
 
-                    // Reset the fan mode so that the settings are applied
-                    Context.Op.Platform.Fans.SetMode(
-                        Context.Op.Platform.Fans.GetMode());
+
 
                 }
 
@@ -375,6 +369,8 @@ namespace OmenMon.AppGui {
                 Context.Op.Platform.Fans.RestoreAutomatic(fanModeAsk);
 
             }
+
+            GuiOp.SignalUserChange();
 
             // Restore the default button look
             this.BtnFanSet.Checked = false;
@@ -693,10 +689,10 @@ namespace OmenMon.AppGui {
             // Update the platform fan readings
             Context.Op.Platform.UpdateFans();
 
-            // Use BIOS fan level (krpm) as RPM
+            // Use the RPM source selected by the product profile
             try {
-                this.LblFan0Val.Text = (Context.Op.Platform.Fans.Fan[0].GetLevel() * 100).ToString(Config.FormatFanSpeed);
-                this.LblFan1Val.Text = (Context.Op.Platform.Fans.Fan[1].GetLevel() * 100).ToString(Config.FormatFanSpeed);
+                this.LblFan0Val.Text = Context.Op.Platform.Fans.Fan[0].GetSpeed().ToString(Config.FormatFanSpeed);
+                this.LblFan1Val.Text = Context.Op.Platform.Fans.Fan[1].GetSpeed().ToString(Config.FormatFanSpeed);
             } catch { }
 
             // Update the fan level [krpm]
@@ -710,12 +706,10 @@ namespace OmenMon.AppGui {
                         Context.Op.Platform.Fans.Fan[1].GetLevel(), this.TrkFan1Lvl.Minimum, this.TrkFan1Lvl.Maximum);
             } catch { }
 
-            // Use BIOS fan level as % of max for rate display
+            // Use the rate source selected by the product profile
             try {
-                int lvl0 = Context.Op.Platform.Fans.Fan[0].GetLevel();
-                int lvl1 = Context.Op.Platform.Fans.Fan[1].GetLevel();
-                int pct0 = lvl0 * 100 / Config.FanLevelMax;
-                int pct1 = lvl1 * 100 / Config.FanLevelMax;
+                int pct0 = Context.Op.Platform.Fans.Fan[0].GetRate();
+                int pct1 = Context.Op.Platform.Fans.Fan[1].GetRate();
                 // clamp to [0,100]
                 pct0 = pct0 < 0 ? 0 : pct0 > 100 ? 100 : pct0;
                 pct1 = pct1 < 0 ? 0 : pct1 > 100 ? 100 : pct1;
@@ -731,7 +725,8 @@ namespace OmenMon.AppGui {
                 countdown.ToString() + Config.Locale.Get(Config.L_UNIT + "TimeSecond" + Config.LS_CUSTOM_FONT) : "";
 
             // In constant-speed mode, keep resetting the countdown, while also reapplying the current mode
-            if(this.RdoFanConst.Checked == true && countdown < Config.UpdateMonitorInterval + Config.FanCountdownExtendThreshold) {
+            if(!Context.Op.Platform.Profile.UsesBiosFanControl && this.RdoFanConst.Checked == true &&
+                countdown < Config.UpdateMonitorInterval + Config.FanCountdownExtendThreshold) {
                 Context.Op.Platform.Fans.SetMode(Context.Op.Platform.Fans.GetMode());
                 Context.Op.Platform.Fans.SetCountdown(Config.FanCountdownExtendInterval);
             }
@@ -940,7 +935,7 @@ namespace OmenMon.AppGui {
             labelCaption.Enabled = true;
 
             // Always update the value (show zero if necessary)
-            labelValue.Text = value.ToString()
+            labelValue.Text = value <= 0 ? "—" : value.ToString()
                 + Config.Locale.Get(Config.L_UNIT + "Temperature" + Config.LS_CUSTOM_FONT)
                 + (valueTrend == PlatformData.ValueTrend.Unchanged ?
                     Conv.GetChar(Conv.SpecialChar.SpaceEn) : valueTrend == PlatformData.ValueTrend.Ascending ?

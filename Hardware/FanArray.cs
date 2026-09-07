@@ -117,13 +117,16 @@ namespace OmenMon.Hardware.Platform {
         // Retrieves the countdown value [s]
         // until automatic settings are restored
         public int GetCountdown() {
+            if(Profile.UsesBiosFanControl)
+                return 0; // No verified writable countdown register on this board.
             this.Countdown.Update();
             return this.Countdown.GetValue();
         }
 
         // Sets the countdown value [s]
         public void SetCountdown(int countdown) {
-            this.Countdown.SetValue(countdown);
+            if(!Profile.UsesBiosFanControl)
+                this.Countdown.SetValue(countdown);
         }
 
         // Retrieves the levels of all fans at the same time
@@ -133,14 +136,21 @@ namespace OmenMon.Hardware.Platform {
 
         // Sets the levels of all fans at the same time
         public void SetLevels(byte[] levels) {
+            if(Profile.UsesBiosFanControl) {
+                // Use HP's WMI payload regardless of legacy XML flags.
+                // Report failures instead of claiming the target was accepted.
+                Hw.Bios.SetFanLevel(levels);
+                LastSetOff = levels[0] == 0 && levels[1] == 0;
+                return;
+            }
 
             // Set manual fan mode, if needed
-            if(Config.FanLevelNeedManual)
+            if(Config.FanLevelNeedManual && !Profile.UsesBiosFanControl)
                 this.SetManual(true);
 
             // Depending on the configuration setting,
             // use either the BIOS or the EC to set levels
-            if(Config.FanLevelUseEc) {
+            if(Config.FanLevelUseEc && !Profile.UsesBiosFanControl) {
 
                 // Try to set the speed for each fan individually
                 for(int i = 0; i < levels.Length; i++)
@@ -168,11 +178,14 @@ namespace OmenMon.Hardware.Platform {
 
         // Retrieves the manual fan speed toggle status
         public bool GetManual() {
-            return this.Manual.GetValue() == (byte) PlatformData.FanManual.On;
+            return !Profile.UsesBiosFanControl &&
+                this.Manual.GetValue() == (byte) PlatformData.FanManual.On;
         }
 
         // Sets the manual fan speed toggle status
         public void SetManual(bool flag) {
+            if(Profile.UsesBiosFanControl)
+                return;
             this.Manual.SetValue(flag ?
                 (byte) PlatformData.FanManual.On : (byte) PlatformData.FanManual.Off);
         }
@@ -184,18 +197,19 @@ namespace OmenMon.Hardware.Platform {
 
         // Sets the maximum fan speed status
         public void SetMax(bool flag) {
-            // On 08BD4, command 0x27 only implements the "on" branch.  HP's
-            // own client reapplies automatic mode before sending MaxFan=off.
-            if(!flag)
-                SetModeInternal(LastSetMode ?? BiosData.FanMode.Default, true);
-            Hw.BiosSet(Hw.Bios.SetMaxFan, flag);
+            if(!flag) {
+                RestoreAutomatic(LastSetMode ?? BiosData.FanMode.Default);
+                return;
+            }
+            Hw.BiosSet(Hw.Bios.SetMaxFan, true);
+            LastSetOff = false;
         }
 
         // Retrieves the current fan mode
         public BiosData.FanMode GetMode() {
 
             // When using EC for fan control, read the mode from the EC register
-            if(Config.FanLevelUseEc) {
+            if(Config.FanLevelUseEc && !Profile.UsesBiosFanControl) {
                 this.Mode.Update();
                 byte ecValue = (byte) this.Mode.GetValue();
 
@@ -218,13 +232,17 @@ namespace OmenMon.Hardware.Platform {
         }
 
         // Restores firmware-controlled fan behavior after Max, Off, a fixed
-        // level, or a fan program.  Order intentionally matches HP's client.
+        // level, or a fan program. Release targets before HP's mode/Max-off sequence.
         public void RestoreAutomatic(BiosData.FanMode mode) {
             LastSetOff = false;
 
-            if(Config.FanLevelNeedManual)
+            // GC27(off) is a no-op on 8BD4. Release the fixed levels too.
+            if(Profile.UsesBiosFanControl)
+                Hw.Bios.SetFanLevel(new byte[] { Byte.MaxValue, Byte.MaxValue });
+            else
+                SetLevels(new byte[] { Byte.MaxValue, Byte.MaxValue });
+            if(Config.FanLevelNeedManual && !Profile.UsesBiosFanControl)
                 SetManual(false);
-
             SetModeInternal(mode, true);
             Hw.BiosSet(Hw.Bios.SetMaxFan, false);
         }
@@ -233,9 +251,7 @@ namespace OmenMon.Hardware.Platform {
         // excluded: their address and encoding differ between product lines.
         protected void SetModeInternal(BiosData.FanMode mode, bool fanControlByBios) {
 
-            // Cache the mode for GetMode fallback
-            LastSetMode = mode;
-
+            BiosData.FanMode requestedMode = mode;
             try {
                 BiosData.ThermalPolicyVersion policy =
                     this.System.GetSystemData().ThermalPolicy;
@@ -247,11 +263,12 @@ namespace OmenMon.Hardware.Platform {
             Hw.BiosExec(
                 bios => bios.SetFanMode(mode, fanControlByBios),
                 Hw.Bios);
+            LastSetMode = requestedMode;
         }
 
         // Retrieves the fan off switch status
         public bool GetOff() {
-            if(Config.FanLevelUseEc) {
+            if(Config.FanLevelUseEc && !Profile.UsesBiosFanControl) {
                 this.Switch.Update();
                 return ((PlatformData.FanSwitch) this.Switch.GetValue()) == PlatformData.FanSwitch.Off;
             }
@@ -262,7 +279,7 @@ namespace OmenMon.Hardware.Platform {
         // Switches the fan off or back on
         public void SetOff(bool flag) {
             LastSetOff = flag;
-            if(Config.FanLevelUseEc) {
+            if(Config.FanLevelUseEc && !Profile.UsesBiosFanControl) {
                 // Use EC register to switch fans off/on
                 this.Switch.SetValue(flag ?
                     (int) PlatformData.FanSwitch.Off : (int) PlatformData.FanSwitch.On);

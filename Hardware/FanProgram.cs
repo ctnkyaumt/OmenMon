@@ -172,15 +172,8 @@ namespace OmenMon.Hardware.Platform {
             // Set the state flag
             this.IsSuspended = true;
 
-            // Reset fan speed
-            SetFanLevel(new byte[] { Byte.MaxValue, Byte.MaxValue } );
-
-            // Disable manual fan mode
-            if(Config.FanLevelNeedManual)
-                Platform.Fans.SetManual(false);
-
-            // Restore the previous fan mode
-            UpdateFanMode(true, this.LastFanMode);
+            // Release fixed levels and restore firmware control in every exit path.
+            Platform.Fans.RestoreAutomatic(this.LastFanMode);
 
             // Restore the previous GPU power settings
             UpdateGpuPower(true, this.LastGpuPowerData);
@@ -197,15 +190,8 @@ namespace OmenMon.Hardware.Platform {
             if(!this.IsEnabled)
                 return false;
 
-            // Reset fan speed
-            SetFanLevel(new byte[] { Byte.MaxValue, Byte.MaxValue } );
-
-            // Disable manual fan mode
-            if(Config.FanLevelNeedManual)
-                Platform.Fans.SetManual(false);
-
-            // Restore the previous fan mode
-            UpdateFanMode(true, this.LastFanMode);
+            // Release fixed levels and restore firmware control in every exit path.
+            Platform.Fans.RestoreAutomatic(this.LastFanMode);
 
             // Restore the previous GPU power settings
             UpdateGpuPower(true, this.LastGpuPowerData);
@@ -250,14 +236,14 @@ namespace OmenMon.Hardware.Platform {
                 + Config.Locale.Get(Config.L_PROG + "Fans") + " "
                 + Conv.GetString(fans[0], 2, 10) + ", " + Conv.GetString(fans[1], 2, 10));
 
-            // Set fan levels
-            SetFanLevel(fans);
-
             // Perform other updates, only if necessary
             // or, in case of the fan mode, configured to do so
             // without checking, so as to reduce the EC burden
             UpdateFanMode(!Config.FanProgramModeCheckFirst);
             UpdateGpuPower();
+
+            // Mode/power notifications can replace the fan policy. Apply levels last.
+            SetFanLevel(fans);
 
             // Fan-mode setting resets the countdown,
             // thus no need to update in such case

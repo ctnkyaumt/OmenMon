@@ -55,6 +55,7 @@ namespace OmenMon.Hardware.Platform {
     public sealed class PlatformProfile {
         public string Name { get; private set; }
         public int KeyboardZoneCount { get; private set; }
+        public bool UsesBiosFanControl { get; private set; }
         public string[] FanModeNames { get; private set; }
         public EcRegisterProfile Ec { get; private set; }
         public TemperatureProfile[] Temperature { get; private set; }
@@ -71,6 +72,7 @@ namespace OmenMon.Hardware.Platform {
             TemperatureProfile[] temperature) {
 
             Name = name;
+            UsesBiosFanControl = name == "HP Victus 8BD4";
             KeyboardZoneCount = keyboardZoneCount;
             FanModeNames = fanModeNames;
             Ec = ec;
@@ -92,7 +94,7 @@ namespace OmenMon.Hardware.Platform {
                     new TemperatureProfile[] {
                         new TemperatureProfile("CPU", 0xB0),
                         new TemperatureProfile("GPU", 0xB2),
-                        new TemperatureProfile("SSD", 0xB7, false)
+                        new TemperatureProfile("SYS", 0xB7, false)
                     });
             }
 
@@ -114,6 +116,21 @@ namespace OmenMon.Hardware.Platform {
                     new TemperatureProfile("TNT4", 0x49),
                     new TemperatureProfile("TNT5", 0x4B)
                 });
+        }
+
+        public bool TryGetTemperatureRegister(string name, out byte register) {
+            string alias = name == "CPUT" ? "CPU" : name == "GPTM" ? "GPU" :
+                name == "SSD" ? "SYS" : name;
+            foreach(TemperatureProfile sensor in Temperature) {
+                string candidate = sensor.Name == "CPUT" ? "CPU" :
+                    sensor.Name == "GPTM" ? "GPU" : sensor.Name;
+                if(candidate == alias) {
+                    register = sensor.Register;
+                    return true;
+                }
+            }
+            register = 0;
+            return false;
         }
 
         // HP's current thermal policy maps the friendly three modes to

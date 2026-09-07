@@ -220,6 +220,8 @@ namespace OmenMon.AppGui {
         // Toggles the maximum fan speed on and off
         private void EventActionFanMax(object sender, EventArgs e) {
 
+            Context.Op.Program.Terminate();
+
             // Toggle the maximum fan speed
             Context.Op.Platform.Fans.SetMax(!((ToolStripMenuItem) sender).Checked);
 
@@ -237,6 +239,8 @@ namespace OmenMon.AppGui {
 
         // Toggles the fan on and off entirely
         private void EventActionFanOff(object sender, EventArgs e) {
+
+            Context.Op.Program.Terminate();
 
             // Toggle the fan on or off
             Context.Op.Platform.Fans.SetOff(!((ToolStripMenuItem) sender).Checked);
@@ -256,30 +260,17 @@ namespace OmenMon.AppGui {
         // Switches the fan mode
         private void EventActionFanMode(object sender, EventArgs e) {
 
-            // Retrieve the current fan mode
-            BiosData.FanMode fanModeNow = Context.Op.Platform.Fans.GetMode();
-
-            // Retrieve the requested fan mode
             BiosData.FanMode fanModeAsk = (BiosData.FanMode) Enum.Parse(
-                typeof(BiosData.FanMode), 
+                typeof(BiosData.FanMode),
                 ((ToolStripMenuItem) sender).Name.Remove(0, P_FAN_MODE.Length));
 
-            // Proceed only if the requested mode
-            // is different than the current one
-            if(fanModeAsk != fanModeNow) {
-
-                // Set the requested mode and restore automatic thermal control.
-                Context.Op.Platform.Fans.RestoreAutomatic(fanModeAsk);
-
-                // Update the main form, if available
-                if(Context.FormMain != null)
-                    Context.FormMain.UpdateFanCtl();
-
-                // Update the menu section
-                UpdateFan();
-
-            }
-
+            // Selecting the current mode also means "return to automatic".
+            Context.Op.Program.Terminate();
+            Context.Op.Platform.Fans.RestoreAutomatic(fanModeAsk);
+            GuiOp.SignalUserChange();
+            if(Context.FormMain != null)
+                Context.FormMain.UpdateFanCtl();
+            UpdateFan();
         }
 
         // Switches the fan program
