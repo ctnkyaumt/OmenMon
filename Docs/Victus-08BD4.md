@@ -46,15 +46,16 @@ during deceleration.
 Furthermore, on 8BD4 the ACPI AML method GC27 has no off branch (passing 0 is a
 no-op), and GC1A only updates the low bit of OGHM without clearing EC target
 speed registers. The EC target registers stay latched at manual speed until
-explicitly released. Byte 0xFF (255) is HP's official firmware sentinel for
-releasing manual speed overrides to the automatic thermal curve (used by HP OGH
-AdaptivePowerControlV1::RestoreFanSpeedForCleanCreek and DynamicFanCurve::SetFanSpeeds).
-On laptop test, calling 0x2E with [255, 255] successfully returned fans from ~5900 RPM
-to ~2300 RPM.
+explicitly updated. GC2E sets target speeds in units of 100 RPM; passing 255
+corresponds to 25,500 RPM, which the EC firmware clamps to MAX speed (5800/6100 RPM).
+The verified baseline automatic target is level 23 (2300 RPM), corresponding to
+HP OGH `SetSwFanControlLevelManualSlider(50)` for Bigred. Calling 0x2E with [23, 23]
+breaks the latch and returns fans to baseline, from where the firmware thermal curve
+takes over.
 
 OmenMon now:
 1. Maintains a cached `LastSetMax` state for boards with RPM-based GC26.
-2. In `RestoreAutomatic`, releases fixed targets via 0x2E with [255, 255] before
+2. In `RestoreAutomatic`, sets baseline targets via 0x2E with [23, 23] before
    sending the requested mode (GC1A) and disabling Max (GC27).
 3. Clears `LastSetMax` and `LastSetOff` on restore so Auto mode is cleanly reported.
 

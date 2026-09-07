@@ -92,9 +92,9 @@ internal static class Regression {
         Equal("levels:35,36", calls.Single(), "Victus ignores legacy EC flag");
         calls.Clear();
         fans.RestoreAutomatic(BiosData.FanMode.Default);
-        Equal("levels:255,255|mode:48:True|max:False", string.Join("|", calls), "release before Auto");
+        Equal("levels:23,23|mode:48:True|max:False", string.Join("|", calls), "release before Auto");
         calls.Clear(); fans.SetMax(false);
-        Equal("levels:255,255|mode:48:True|max:False", string.Join("|", calls), "Max off restores Auto");
+        Equal("levels:23,23|mode:48:True|max:False", string.Join("|", calls), "Max off restores Auto");
         calls.Clear(); fans.SetMax(true);
         Equal("max:True", calls.Single(), "Max on sets WMI MaxFan");
         Check(fans.GetMax(), "Victus Max cached true");
@@ -195,9 +195,9 @@ internal static class Regression {
         Check(program.Run("Regression"), "program starts");
         Equal("mode:49:False|gpu:87|levels:35,36", string.Join("|", calls), "policy before fixed speed");
         calls.Clear(); Check(program.Suspend(), "program suspends");
-        Equal("levels:255,255|mode:48:True|max:False|gpu:75", string.Join("|", calls), "suspend restores exact state");
+        Equal("levels:23,23|mode:48:True|max:False|gpu:75", string.Join("|", calls), "suspend restores exact state");
         program.Resume(); calls.Clear(); Check(program.Terminate(), "program terminates");
-        Equal("levels:255,255|mode:48:True|max:False|gpu:75", string.Join("|", calls), "terminate restores Auto");
+        Equal("levels:23,23|mode:48:True|max:False|gpu:75", string.Join("|", calls), "terminate restores Auto");
     }
     static void EcReports() {
         var save = typeof(CliOp).GetMethod("SaveEcReport", BindingFlags.NonPublic | BindingFlags.Static);

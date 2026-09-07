@@ -50,6 +50,7 @@ namespace OmenMon.Hardware.Platform {
 #region Implementation
     // Implements a mechanism for interacting with the fan system
     public class FanArray : IFanArray {
+        public const byte BiosFanAutoLevel = 23;
 
         // Fan array
         public IFan[] Fan { get; private set; }
@@ -245,9 +246,12 @@ namespace OmenMon.Hardware.Platform {
             LastSetOff = false;
             LastSetMax = false;
 
-            // GC27(off) is a no-op on 8BD4. Release manual targets via 0x2E sentinel.
+            // GC27(off) is a no-op on 8BD4 and GC2E takes speeds in 100 RPM units;
+            // byte 255 is clamped by EC firmware to MAX speed (5800/6100 RPM).
+            // Level 23 (2300 RPM) is HP OGH's verified baseline auto speed
+            // (SetSwFanControlLevelManualSlider 50% for Bigred).
             if(Profile.UsesBiosFanControl)
-                Hw.Bios.SetFanLevel(new byte[] { Byte.MaxValue, Byte.MaxValue });
+                Hw.Bios.SetFanLevel(new byte[] { BiosFanAutoLevel, BiosFanAutoLevel });
             else
                 SetLevels(new byte[] { Byte.MaxValue, Byte.MaxValue });
 
