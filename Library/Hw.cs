@@ -3,6 +3,7 @@
      //  https://omenmon.github.io/
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Collections.Generic;
 using Microsoft.Win32;
@@ -56,6 +57,27 @@ namespace OmenMon.Library {
 #region BIOS
         // BIOS Control Interface
         public static IBiosCtl Bios;
+        internal static readonly object BiosControlLock = new object();
+        private static long LastBiosHeartbeat;
+
+        // GC10 renews OEM control on Victus, including keyboard write access.
+        // A successful call starts a firmware watchdog of about two minutes.
+        public static void BiosHeartbeat() {
+            lock(BiosControlLock) {
+                Bios.GetFanCount();
+                LastBiosHeartbeat = Stopwatch.GetTimestamp();
+            }
+        }
+
+        public static int BiosControlCountdown {
+            get {
+                lock(BiosControlLock) {
+                    if(LastBiosHeartbeat == 0) return 0;
+                    double elapsed = (Stopwatch.GetTimestamp() - LastBiosHeartbeat) / (double)Stopwatch.Frequency;
+                    return Math.Max(0, (int)Math.Ceiling(120 - elapsed));
+                }
+            }
+        }
 
         // Prepares the BIOS for use
         public static void BiosInit() {

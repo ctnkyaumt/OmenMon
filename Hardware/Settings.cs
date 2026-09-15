@@ -203,13 +203,13 @@ namespace OmenMon.Hardware.Platform {
 
         // Sets the keyboard backlight status given an enumerated value
         public void SetKbdBacklight(BiosData.Backlight value) {
+            PrepareKeyboardWrite();
             Hw.BiosSet(Hw.Bios.SetBacklight, value);
         }
 
         // Sets the keyboard backlight status given a Boolean flag
         public void SetKbdBacklight(bool flag) {
-            Hw.BiosSet(Hw.Bios.SetBacklight, flag ?
-               BiosData.Backlight.On : BiosData.Backlight.Off);
+            SetKbdBacklight(flag ? BiosData.Backlight.On : BiosData.Backlight.Off);
         }
 
         // Queries the keyboard backlight color
@@ -232,7 +232,15 @@ namespace OmenMon.Hardware.Platform {
 
         // Sets the keyboard backlight color
         public void SetKbdColor(BiosData.ColorTable value) {
+            PrepareKeyboardWrite();
             Hw.BiosSetStruct(Hw.Bios.SetColorTable, value);
+        }
+
+        private void PrepareKeyboardWrite() {
+            // Cold-boot LC03/LC05 writes are ignored until the OEM heartbeat.
+            // Acquire access on demand, without keeping Auto in manual control.
+            if(PlatformProfile.ForProduct(GetProduct()).UsesBiosFanControl)
+                Hw.BiosHeartbeat();
         }
 
         // Retrieves keyboard type from the BIOS

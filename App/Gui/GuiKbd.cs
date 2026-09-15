@@ -81,8 +81,13 @@ namespace OmenMon.AppGui {
                 this.IsBacklight = flag;
 
                 // Allow for deferring update
-                if(!deferUpdate)
-                    Update();
+                if(!deferUpdate) {
+                    try { Update(); }
+                    catch {
+                        GetHw(); // Restore actual state after a rejected command.
+                        throw;
+                    }
+                }
 
             }
         }
@@ -244,9 +249,7 @@ namespace OmenMon.AppGui {
             // only starts after the physical Fn/F4 key is pressed once.
             Context.Op.Platform.System.SetKbdColor(new BiosData.ColorTable(ColorArray, true));
 
-            // Set brightness/backlight after the color table. Repeat once to
-            // ensure the firmware latches software control on first transition.
-            Context.Op.Platform.System.SetKbdBacklight(this.IsBacklight);
+            // The BIOS layer waits for readback and retries a dropped command.
             Context.Op.Platform.System.SetKbdBacklight(this.IsBacklight);
 
             // Signal that user made a change (for EC monitor logging)

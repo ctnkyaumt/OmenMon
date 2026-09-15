@@ -540,7 +540,7 @@ namespace OmenMon.AppGui {
             // Populate the fan mode list
             // The most useful modes are on top,
             // the rest (legacy modes) is sorted alphabetically
-            string[] fanModesMore = Context.Op.Platform.Profile.FanModeNames;
+            string[] fanModesMore = (string[]) Context.Op.Platform.Profile.FanModeNames.Clone();
             HashSet<string> fanModesAllowed = new HashSet<string>(fanModesMore);
             List<string> fanModes = new List<string>();
             foreach(string name in Config.FanModesSticky)
@@ -735,7 +735,9 @@ namespace OmenMon.AppGui {
             // Hold if the Set button is already highlighted or the list is currently open
             if(!this.BtnFanSet.Checked && !this.CmbFanMode.DroppedDown)
             try {
-                this.CmbFanMode.SelectedValue = Enum.GetName(typeof(BiosData.FanMode), Context.Op.Platform.Fans.GetMode());
+                string modeName = Context.Op.Platform.Profile.GetFanModeName(Context.Op.Platform.Fans.GetMode());
+                if(modeName != null)
+                    this.CmbFanMode.SelectedValue = modeName;
             } catch { }
 
             // Update the current fan program

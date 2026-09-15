@@ -37,6 +37,7 @@ namespace OmenMon.Hardware.Platform {
         public BiosData.FanMode GetMode();
         public void SetMode(BiosData.FanMode mode);
         public void RestoreAutomatic(BiosData.FanMode mode);
+        public void MaintainControl();
 
         // Retrieves the fan off switch status
         // or switches the fan off
@@ -50,7 +51,7 @@ namespace OmenMon.Hardware.Platform {
 #region Implementation
     // Implements a mechanism for interacting with the fan system
     public class FanArray : IFanArray {
-        public const byte BiosFanAutoLevel = 23;
+        private bool KeepBiosControl;
 
         // Fan array
         public IFan[] Fan { get; private set; }
@@ -122,10 +123,12 @@ namespace OmenMon.Hardware.Platform {
         // Retrieves the countdown value [s]
         // until automatic settings are restored
         public int GetCountdown() {
-            if(Profile.UsesBiosFanControl)
-                return 0; // No verified writable countdown register on this board.
-            this.Countdown.Update();
-            return this.Countdown.GetValue();
+            lock(Hw.BiosControlLock) {
+                if(Profile.UsesBiosFanControl)
+                    return KeepBiosControl ? 0 : Hw.BiosControlCountdown;
+                this.Countdown.Update();
+                return this.Countdown.GetValue();
+            }
         }
 
         // Sets the countdown value [s]
@@ -141,43 +144,47 @@ namespace OmenMon.Hardware.Platform {
 
         // Sets the levels of all fans at the same time
         public void SetLevels(byte[] levels) {
-            if(Profile.UsesBiosFanControl) {
-                // Use HP's WMI payload regardless of legacy XML flags.
-                // Report failures instead of claiming the target was accepted.
-                Hw.Bios.SetFanLevel(levels);
-                LastSetOff = levels[0] == 0 && levels[1] == 0;
-                LastSetMax = false;
-                return;
-            }
+            lock(Hw.BiosControlLock) {
+                if(Profile.UsesBiosFanControl) {
+                    // Use HP's WMI payload regardless of legacy XML flags.
+                    // Report failures instead of claiming the target was accepted.
+                    Hw.BiosHeartbeat();
+                    Hw.Bios.SetFanLevel(levels);
+                    KeepBiosControl = true;
+                    LastSetOff = levels[0] == 0 && levels[1] == 0;
+                    LastSetMax = false;
+                    return;
+                }
 
-            // Set manual fan mode, if needed
-            if(Config.FanLevelNeedManual && !Profile.UsesBiosFanControl)
-                this.SetManual(true);
+                // Set manual fan mode, if needed
+                if(Config.FanLevelNeedManual && !Profile.UsesBiosFanControl)
+                    this.SetManual(true);
 
-            // Depending on the configuration setting,
-            // use either the BIOS or the EC to set levels
-            if(Config.FanLevelUseEc && !Profile.UsesBiosFanControl) {
+                // Depending on the configuration setting,
+                // use either the BIOS or the EC to set levels
+                if(Config.FanLevelUseEc && !Profile.UsesBiosFanControl) {
 
-                // Try to set the speed for each fan individually
-                for(int i = 0; i < levels.Length; i++)
-                    this.Fan[i].SetLevel(levels[i]);
+                    // Try to set the speed for each fan individually
+                    for(int i = 0; i < levels.Length; i++)
+                        this.Fan[i].SetLevel(levels[i]);
 
-            } else {
-                try {
+                } else {
+                    try {
 
-                    // Make a WMI BIOS call to set the level of both fans
-                    Hw.BiosSet(Hw.Bios.SetFanLevel, levels);
+                        // Make a WMI BIOS call to set the level of both fans
+                        Hw.BiosSet(Hw.Bios.SetFanLevel, levels);
 
-                } catch {
+                    } catch {
 
-                    // It has been reported on some models the settings
-                    // take effect anyway, despite a BIOS error returned
+                        // It has been reported on some models the settings
+                        // take effect anyway, despite a BIOS error returned
 
-                    // Thus, silently ignore if the call failed
+                        // Thus, silently ignore if the call failed
 
-                    // Regardless of the Config.BiosErrorReporting value,
-                    // status is always checked, and reported in CLI mode
+                        // Regardless of the Config.BiosErrorReporting value,
+                        // status is always checked, and reported in CLI mode
 
+                    }
                 }
             }
         }
@@ -205,13 +212,18 @@ namespace OmenMon.Hardware.Platform {
 
         // Sets the maximum fan speed status
         public void SetMax(bool flag) {
-            LastSetMax = flag;
-            if(!flag) {
-                RestoreAutomatic(LastSetMode ?? BiosData.FanMode.Default);
-                return;
+            lock(Hw.BiosControlLock) {
+                if(!flag) {
+                    RestoreAutomatic(LastSetMode ?? BiosData.FanMode.Default);
+                    return;
+                }
+                if(Profile.UsesBiosFanControl)
+                    Hw.BiosHeartbeat();
+                Hw.BiosSet(Hw.Bios.SetMaxFan, true);
+                KeepBiosControl = Profile.UsesBiosFanControl;
+                LastSetMax = true;
+                LastSetOff = false;
             }
-            Hw.BiosSet(Hw.Bios.SetMaxFan, true);
-            LastSetOff = false;
         }
 
         // Retrieves the current fan mode
@@ -243,22 +255,34 @@ namespace OmenMon.Hardware.Platform {
         // Restores firmware-controlled fan behavior after Max, Off, a fixed
         // level, or a fan program.
         public void RestoreAutomatic(BiosData.FanMode mode) {
-            LastSetOff = false;
-            LastSetMax = false;
-
-            // GC27(off) is a no-op on 8BD4 and GC2E takes speeds in 100 RPM units;
-            // byte 255 is clamped by EC firmware to MAX speed (5800/6100 RPM).
-            // Level 23 (2300 RPM) is HP OGH's verified baseline auto speed
-            // (SetSwFanControlLevelManualSlider 50% for Bigred).
-            if(Profile.UsesBiosFanControl)
-                Hw.Bios.SetFanLevel(new byte[] { BiosFanAutoLevel, BiosFanAutoLevel });
-            else
+            lock(Hw.BiosControlLock) {
+                if(Profile.UsesBiosFanControl) {
+                    // GC10 is an OEM-control heartbeat, despite its "fan count" name.
+                    // Stop renewing it: the EC returns to its native thermal policy
+                    // after about 120 seconds. GC1A/GC27 alone do not release targets.
+                    KeepBiosControl = false;
+                    if(LastSetOff)
+                        Hw.Bios.SetMaxFan(true); // Do not wait for expiry with fans off.
+                    SetModeInternal(mode, true);
+                    LastSetOff = LastSetMax = false;
+                    return;
+                }
                 SetLevels(new byte[] { Byte.MaxValue, Byte.MaxValue });
 
-            if(Config.FanLevelNeedManual && !Profile.UsesBiosFanControl)
-                SetManual(false);
-            SetModeInternal(mode, true);
-            Hw.BiosSet(Hw.Bios.SetMaxFan, false);
+                if(Config.FanLevelNeedManual && !Profile.UsesBiosFanControl)
+                    SetManual(false);
+                SetModeInternal(mode, true);
+                Hw.BiosSet(Hw.Bios.SetMaxFan, false);
+                LastSetOff = LastSetMax = false;
+            }
+        }
+
+        // GUI heartbeat timer. Auto must let the OEM session expire.
+        public void MaintainControl() {
+            lock(Hw.BiosControlLock) {
+                if(!Profile.UsesBiosFanControl || KeepBiosControl)
+                    Hw.BiosHeartbeat();
+            }
         }
 
         // Applies the mode through WMI.  Raw EC mode writes are deliberately
@@ -292,22 +316,29 @@ namespace OmenMon.Hardware.Platform {
 
         // Switches the fan off or back on
         public void SetOff(bool flag) {
-            LastSetOff = flag;
-            if(flag)
-                LastSetMax = false;
-            if(Config.FanLevelUseEc && !Profile.UsesBiosFanControl) {
-                // Use EC register to switch fans off/on
-                this.Switch.SetValue(flag ?
-                    (int) PlatformData.FanSwitch.Off : (int) PlatformData.FanSwitch.On);
-            } else {
-                if(flag) {
-                    // Turn fans off by setting levels to zero via BIOS WMI
-                    try {
-                        Hw.BiosSet(Hw.Bios.SetFanLevel, new byte[]{0x00, 0x00});
-                    } catch {}
+            lock(Hw.BiosControlLock) {
+                if(Profile.UsesBiosFanControl) {
+                    if(flag) SetLevels(new byte[] {0,0});
+                    else RestoreAutomatic(LastSetMode ?? BiosData.FanMode.Default);
+                    return;
+                }
+                LastSetOff = flag;
+                if(flag)
+                    LastSetMax = false;
+                if(Config.FanLevelUseEc && !Profile.UsesBiosFanControl) {
+                    // Use EC register to switch fans off/on
+                    this.Switch.SetValue(flag ?
+                        (int) PlatformData.FanSwitch.Off : (int) PlatformData.FanSwitch.On);
                 } else {
-                    // Turn fans back on by restoring automatic mode via BIOS WMI
-                    RestoreAutomatic(LastSetMode ?? BiosData.FanMode.Default);
+                    if(flag) {
+                        // Turn fans off by setting levels to zero via BIOS WMI
+                        try {
+                            Hw.BiosSet(Hw.Bios.SetFanLevel, new byte[]{0x00, 0x00});
+                        } catch {}
+                    } else {
+                        // Turn fans back on by restoring automatic mode via BIOS WMI
+                        RestoreAutomatic(LastSetMode ?? BiosData.FanMode.Default);
+                    }
                 }
             }
         }

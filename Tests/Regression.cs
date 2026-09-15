@@ -59,8 +59,10 @@ internal static class Regression {
     }
     static void InstallBios() {
         failMode = failLevels = false;
+        typeof(Hw).GetField("LastBiosHeartbeat", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, 0L);
         calls.Clear();
         Hw.Bios = new Proxy<IBiosCtl>((name, args) => {
+            if(name == "GetFanCount") { calls.Add("heartbeat"); return (byte)2; }
             if(name == "SetFanLevel") {
                 if(failLevels) throw new IOException("simulated rejected level");
                 calls.Add("levels:" + string.Join(",", (byte[])args[0]));
@@ -89,14 +91,14 @@ internal static class Regression {
         fans.SetManual(true); fans.SetCountdown(120);
         Equal(0, calls.Count, "no unverified EC writes");
         fans.SetLevels(new byte[] { 35, 36 });
-        Equal("levels:35,36", calls.Single(), "Victus ignores legacy EC flag");
+        Equal("heartbeat|levels:35,36", string.Join("|", calls), "Victus ignores legacy EC flag");
         calls.Clear();
         fans.RestoreAutomatic(BiosData.FanMode.Default);
-        Equal("levels:23,23|mode:48:True|max:False", string.Join("|", calls), "release before Auto");
+        Equal("mode:48:True", string.Join("|", calls), "release before Auto");
         calls.Clear(); fans.SetMax(false);
-        Equal("levels:23,23|mode:48:True|max:False", string.Join("|", calls), "Max off restores Auto");
+        Equal("mode:48:True", string.Join("|", calls), "Max off restores Auto");
         calls.Clear(); fans.SetMax(true);
-        Equal("max:True", calls.Single(), "Max on sets WMI MaxFan");
+        Equal("heartbeat|max:True", string.Join("|", calls), "Max on sets WMI MaxFan");
         Check(fans.GetMax(), "Victus Max cached true");
         calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
         Check(!fans.GetMax(), "Victus Max cached false after Auto");
@@ -104,8 +106,8 @@ internal static class Regression {
         Throws(() => fans.SetMode(BiosData.FanMode.Performance), "failed mode propagates");
         Equal(BiosData.FanMode.Default, fans.GetMode(), "failed mode does not update cache");
         failMode = false; failLevels = true; calls.Clear();
-        Throws(() => fans.RestoreAutomatic(BiosData.FanMode.Performance), "failed release propagates");
-        Equal(0, calls.Count, "failed release cannot report Auto success");
+        fans.RestoreAutomatic(BiosData.FanMode.Performance);
+        Equal("mode:49:True", calls.Single(), "Auto never attempts a fixed target write");
         failLevels = false;
         failLevels = true;
         Throws(() => fans.SetLevels(new byte[] { 35, 35 }), "failed level propagates");
@@ -193,11 +195,100 @@ internal static class Regression {
             BiosData.GpuPowerLevel.Maximum, new SortedDictionary<byte, byte[]> { { 0, new byte[] { 35, 36 } } });
         var program = new FanProgram(platform, (severity, message) => { });
         Check(program.Run("Regression"), "program starts");
-        Equal("mode:49:False|gpu:87|levels:35,36", string.Join("|", calls), "policy before fixed speed");
+        Equal("mode:49:False|gpu:87|heartbeat|levels:35,36", string.Join("|", calls), "policy before fixed speed");
         calls.Clear(); Check(program.Suspend(), "program suspends");
-        Equal("levels:23,23|mode:48:True|max:False|gpu:75", string.Join("|", calls), "suspend restores exact state");
+        Equal("mode:48:True|gpu:75", string.Join("|", calls), "suspend restores exact state");
         program.Resume(); calls.Clear(); Check(program.Terminate(), "program terminates");
-        Equal("levels:23,23|mode:48:True|max:False|gpu:75", string.Join("|", calls), "terminate restores Auto");
+        Equal("mode:48:True|gpu:75", string.Join("|", calls), "terminate restores Auto");
+    }
+    static void ControlHeartbeat() {
+        InstallBios();
+        var fans = Fans(victus);
+        fans.MaintainControl();
+        Equal(0, calls.Count, "startup Auto does not acquire OEM fan control");
+        fans.SetLevels(new byte[] {35,36}); calls.Clear();
+        fans.MaintainControl();
+        Equal("heartbeat", calls.Single(), "fixed control renews watchdog");
+        calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Performance);
+        Equal("mode:49:True", calls.Single(), "Auto changes mode without renewing control or writing RPM");
+        Check(fans.GetCountdown() > 0 && fans.GetCountdown() <= 120, "Auto displays estimated handback countdown");
+        calls.Clear(); fans.MaintainControl(); fans.MaintainControl();
+        Equal(0, calls.Count, "Auto refresh never extends watchdog");
+        typeof(Hw).GetField("LastBiosHeartbeat", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null,
+            Stopwatch.GetTimestamp() - 121L * Stopwatch.Frequency);
+        Equal(0, fans.GetCountdown(), "expired watchdog hides countdown");
+        fans.SetOff(true); calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
+        Equal("max:True|mode:48:True", string.Join("|", calls), "Off handback restores cooling without renewing watchdog");
+        calls.Clear(); fans.MaintainControl();
+        Equal(0, calls.Count, "Off-to-Auto stops renewal");
+        fans.SetMax(true); calls.Clear(); fans.MaintainControl();
+        Equal("heartbeat", calls.Single(), "Max renews watchdog");
+        fans.SetMax(false); calls.Clear(); fans.MaintainControl();
+        Equal(0, calls.Count, "Max off stops renewal");
+        Fans(PlatformProfile.ForProduct("8A14")).MaintainControl();
+        Equal("heartbeat", calls.Single(), "legacy heartbeat behavior preserved");
+
+        // Exercise the real Settings path without running its WMI constructor.
+        var settings = (Settings)FormatterServices.GetUninitializedObject(typeof(Settings));
+        Set(settings, "BaseBoard", new Dictionary<string,string> {{"Product","8BD4"}});
+        calls.Clear();
+        Hw.Bios = new Proxy<IBiosCtl>((name,args) => {
+            if(name == "GetFanCount") {calls.Add("heartbeat"); return (byte)2;}
+            if(name == "SetBacklight") {calls.Add("keyboard:" + (byte)(BiosData.Backlight)args[0]); return null;}
+            if(name == "SetColorTable") {calls.Add("color"); return null;}
+            throw new Exception("Unexpected keyboard call: " + name);
+        }).Value;
+        settings.SetKbdBacklight(true);
+        Equal("heartbeat|keyboard:228", string.Join("|",calls), "first keyboard click acquires write access");
+        calls.Clear(); settings.SetKbdColor(new BiosData.ColorTable(new[] {0,0,0,0}));
+        Equal("heartbeat|color", string.Join("|",calls), "first color change acquires write access");
+        calls.Clear(); fans.MaintainControl();
+        Equal(0,calls.Count,"keyboard access does not enable continuous fan heartbeat");
+    }
+    static void ModeNames() {
+        foreach(BiosData.FanMode mode in new[] {BiosData.FanMode.Performance, BiosData.FanMode.Turbo, BiosData.FanMode.L7})
+            Equal("Performance", victus.GetFanModeName(mode), "canonical performance label");
+        foreach(BiosData.FanMode mode in new[] {BiosData.FanMode.Default, BiosData.FanMode.Balance, BiosData.FanMode.L2})
+            Equal("Default", victus.GetFanModeName(mode), "canonical default label");
+        Equal<string>(null, victus.GetFanModeName((BiosData.FanMode)254), "unknown mode has no false label");
+        using(var form = new System.Windows.Forms.Form())
+        using(var combo = new System.Windows.Forms.ComboBox()) {
+            form.Controls.Add(combo);
+            combo.BindingContext = new System.Windows.Forms.BindingContext();
+            combo.DisplayMember = "Text"; combo.ValueMember = "Value";
+            combo.DataSource = new[] {new {Text="Default",Value="Default"}, new {Text="Performance",Value="Performance"}};
+            combo.SelectedValue = victus.GetFanModeName(BiosData.FanMode.Turbo);
+            Equal("Performance", combo.Text, "WinForms refresh retains Performance text");
+        }
+    }
+    static void Keyboard() {
+        var retry = typeof(BiosCtl).GetMethod("SetBacklightVerified", BindingFlags.Static | BindingFlags.NonPublic);
+        int writes = 0, waits = 0;
+        Action<BiosData.Backlight> write = value => writes++;
+        Func<BiosData.Backlight> read = () => writes < 2 ? (BiosData.Backlight)0 : BiosData.Backlight.On;
+        Action wait = () => waits++;
+        retry.Invoke(null, new object[] {BiosData.Backlight.On, write, read, wait});
+        Equal(2, writes, "dropped first keyboard command retried");
+        Equal(2, waits, "readback waits for EC completion");
+        writes = 0; read = () => (BiosData.Backlight)0;
+        retry.Invoke(null, new object[] {BiosData.Backlight.Off, write, read, wait});
+        Equal(1, writes, "zero off readback normalized without extra writes");
+        writes = 0;
+        Throws(() => retry.Invoke(null, new object[] {BiosData.Backlight.On, write, read, wait}), "permanent keyboard mismatch reported");
+        Equal(3, writes, "retry bounded");
+        writes = 0;
+        write = value => { if(++writes == 1) throw new BiosException("temporary WMI failure"); };
+        read = () => BiosData.Backlight.On;
+        retry.Invoke(null, new object[] {BiosData.Backlight.On, write, read, wait});
+        Equal(2, writes, "transient keyboard WMI failure retried");
+        var payloadMethod = typeof(BiosCtl).GetMethod("CreateColorTablePayload", BindingFlags.Static | BindingFlags.NonPublic);
+        byte[] original = Enumerable.Repeat((byte)0x5A, 128).ToArray(); original[0] = 3;
+        var table = new BiosData.ColorTable(new[] {0x112233,0x112233,0x112233,0x112233});
+        var payload = (byte[])payloadMethod.Invoke(null, new object[] {original, table});
+        Check(payload.Take(25).SequenceEqual(original.Take(25)) && payload.Skip(37).SequenceEqual(original.Skip(37)), "keyboard metadata preserved");
+        Check(!payload.Skip(25).Take(12).SequenceEqual(original.Skip(25).Take(12)), "all color slots updated");
+        Equal((byte)0x5A, original[25], "source buffer unmodified");
+        Throws(() => payloadMethod.Invoke(null, new object[] {new byte[4], table}), "truncated keyboard buffer rejected");
     }
     static void EcReports() {
         var save = typeof(CliOp).GetMethod("SaveEcReport", BindingFlags.NonPublic | BindingFlags.Static);
@@ -237,6 +328,7 @@ internal static class Regression {
             Equal("", stderr.Result, "no console-handle exception");
         }
     }
+    [STAThread]
     public static int Main(string[] args) {
         try {
             typeof(Cli).GetProperty("IsInitialized").GetSetMethod(true).Invoke(null, new object[] { true });
@@ -248,7 +340,7 @@ internal static class Regression {
             }
             work = Path.Combine(Path.GetTempPath(), "OmenMonRegression-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(work); Config.FilePath = Path.Combine(work, "sensors.xml");
-            foreach(Action test in new Action[] { FanControl, GpuPower, SensorPersistence, FanPrograms, EcReports }) {
+            foreach(Action test in new Action[] { FanControl, ControlHeartbeat, ModeNames, Keyboard, GpuPower, SensorPersistence, FanPrograms, EcReports }) {
                 test(); Console.WriteLine("PASS " + test.Method.Name);
             }
             RedirectedCli(Path.GetFullPath(args[0])); Console.WriteLine("PASS RedirectedCli");

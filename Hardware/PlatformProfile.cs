@@ -133,6 +133,14 @@ namespace OmenMon.Hardware.Platform {
             return false;
         }
 
+        // Enum.GetName may choose an alias (Turbo/L7) absent from this profile.
+        public string GetFanModeName(BiosData.FanMode mode) {
+            foreach(string name in FanModeNames)
+                if((BiosData.FanMode) Enum.Parse(typeof(BiosData.FanMode), name) == mode)
+                    return name;
+            return null;
+        }
+
         // HP's current thermal policy maps the friendly three modes to
         // 0x30/0x31/0x50.  Older systems expect 0/1/2 instead.
         public BiosData.FanMode ResolveFanMode(

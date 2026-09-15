@@ -732,7 +732,7 @@ namespace OmenMon.AppGui {
 
             // Retrieve the current fan mode
             BiosData.FanMode fanModeNow = Context.Op.Platform.Fans.GetMode();
-            string fanModeNameNow = Enum.GetName(typeof(BiosData.FanMode), fanModeNow);
+            string fanModeNameNow = Context.Op.Platform.Profile.GetFanModeName(fanModeNow);
             string fanProgNameNow = Context.Op.Program.GetName();
             bool isFanMax = Context.Op.Platform.Fans.GetMax();
             bool isFanProg = Context.Op.Program.IsEnabled;

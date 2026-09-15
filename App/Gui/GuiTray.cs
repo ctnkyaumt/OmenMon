@@ -159,6 +159,11 @@ namespace OmenMon.AppGui {
             if(this.Op.Program.IsEnabled)
                 this.Op.Program.Terminate();
 
+            if(this.Op.Platform.Profile.UsesBiosFanControl) {
+                this.HeartbeatTimer.Stop();
+                this.Op.Platform.Fans.RestoreAutomatic(this.Op.Platform.Fans.GetMode());
+            }
+
             // Perform the usual tasks
             base.ExitThreadCore();
 
@@ -195,8 +200,8 @@ namespace OmenMon.AppGui {
 
         private void HardwareHeartbeatTick(object sender, EventArgs e)
         {
-            // send a heartbeat to the bios for new devices
-            BiosCtl.Instance.GetFanCount();
+            // Auto must allow the Victus OEM-control watchdog to expire.
+            this.Op.Platform.Fans.MaintainControl();
         }
 #endregion
 

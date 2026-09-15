@@ -1,6 +1,6 @@
 # HP Victus 08BD4 reference audit and validation
 
-## Inputs inspected on 2026-09-07
+## Inputs inspected on 2026-09-07 and 2026-09-14/15
 
 User-supplied files in REF_PC:
 
@@ -9,9 +9,9 @@ User-supplied files in REF_PC:
 - OMEN Gaming Hub MSIX 1101.2608.3.0, SHA-256
   27B078A65B7476E59C276D87BE9C3F927D9A181D9BFF2B13FB7398C3401ADF68.
   This is newer than the 1101.2607.3.0 package used for the earlier changes.
-- UEFIExtract A75 extracted firmware sections. Fourteen distinct ACPI tables
-  passed length/checksum validation and were decompiled with ACPICA iasl
-  20260408.
+- UEFIExtract A75 extracted firmware sections. The repeat scan found 78
+  distinct checksum-valid ACPI tables/variants; the WMITable SSDT and DSDT
+  were decompiled with ACPICA iasl.
 - ILSpyCmd 9.1.0 inspected HP.Omen.Core.Common, HP.Omen.Core.Model.Device,
   HP.Omen.Background.PerformanceControl and SystemVitals.
   Proprietary binaries and decompiled code are not included in this repository.
@@ -22,6 +22,7 @@ The WMITable SSDT dispatches command group 0x20008 to these handlers:
 
 | Handler | Evidence | Consequence |
 | --- | --- | --- |
+| GC10 | Sends EC command 0x45/0xA0 while returning fan count | This is an OEM-control heartbeat, not a passive query. |
 | GC1A | Input byte 1 contributes only bit 0 to OGHM; then notifies NPCF | 0x30 Default/Balanced and 0x31 Performance are distinct. Other low-bit aliases are not extra modes. |
 | GC26 | Compares actual fan levels with maximum fan-table values | Max readback is an RPM comparison, not an authoritative control-mode latch. |
 | GC27 | Writes maximum table values only for input byte 0 = 1; no off branch | Max off alone reports success without restoring automatic control. |
@@ -43,21 +44,34 @@ rechecked Max and overturned Auto. Therefore, OmenMon maintains a cached
 `LastSetMax` state on boards with RPM-based GC26 so user-commanded Auto is preserved
 during deceleration.
 
-Furthermore, on 8BD4 the ACPI AML method GC27 has no off branch (passing 0 is a
-no-op), and GC1A only updates the low bit of OGHM without clearing EC target
-speed registers. The EC target registers stay latched at manual speed until
-explicitly updated. GC2E sets target speeds in units of 100 RPM; passing 255
-corresponds to 25,500 RPM, which the EC firmware clamps to MAX speed (5800/6100 RPM).
-The verified baseline automatic target is level 23 (2300 RPM), corresponding to
-HP OGH `SetSwFanControlLevelManualSlider(50)` for Bigred. Calling 0x2E with [23, 23]
-breaks the latch and returns fans to baseline, from where the firmware thermal curve
-takes over.
+The earlier claim that [23, 23] releases Auto was incorrect: it requests a fixed
+2300/2300 RPM target. Likewise, [255, 255] is not a release sentinel; this machine
+clamps it to maximum speed. The GUI's unconditional 30-second GC10 heartbeat
+kept the OEM session alive and prevented firmware recovery.
 
-OmenMon now:
-1. Maintains a cached `LastSetMax` state for boards with RPM-based GC26.
-2. In `RestoreAutomatic`, sets baseline targets via 0x2E with [23, 23] before
-   sending the requested mode (GC1A) and disabling Max (GC27).
-3. Clears `LastSetMax` and `LastSetOff` on restore so Auto mode is cleanly reported.
+Live AC tests show that stopping GC10 allows native fan control to resume about
+120 seconds after the last heartbeat. Both fixed -> Default and Max -> Performance
+recovered. Performance alone, with no heartbeat or target writes, did not force
+maximum fans. A subsequent 70-second Python CPU load raised native fan levels
+from 0/0 to 40/43, followed by cooling down to 23/0 and 23/26. Values are 100 RPM.
+
+OmenMon now sends the heartbeat when acquiring fixed/Max/Off/program control,
+renews it only while that control is active, and stops renewal for Auto and exit.
+Auto applies the requested firmware mode without writing a fixed fan target.
+Off -> Auto first raises cooling to Max while waiting for the session to expire.
+The displayed countdown estimates 120 seconds since the last successful local
+heartbeat; it is not an EC register or proof of firmware state. Keyboard writes
+also require GC10 and restart that wait.
+
+An initial battery Max -> Performance test stayed at Max beyond two minutes.
+Battery recovery is under separate validation; AC timing must not be assumed
+to cover battery operation. HP's software fan controller is a different policy
+from the firmware's native curve. Its manual slider midpoint is not an Auto API.
+
+The Performance label disappearing was a separate UI defect. Value 0x31 also
+has enum aliases Turbo and L7; Enum.GetName returned Turbo, which was absent from
+the two-item Victus dropdown. GUI and tray now resolve the numeric mode against
+the profile's supported names, preserving Performance during refresh.
 
 All GUI and fan-program exit paths use RestoreAutomatic. Choosing the same
 mode in the tray also restores Auto and stops a running program. Fixed speed
@@ -118,10 +132,22 @@ has one physical zone. Product 8BD4 remains explicitly single-zone. All slots
 carry the same chosen color; color is written before enabling backlight.
 
 The firmware reports LC04 backlight status as 0x00 when off and 0xE4 (bit 7 set)
-when on. Bit 7 is checked to normalize on/off state. To match HP OGH FourZoneHelper,
-backlight off sends 0x64 (100% brightness level without bit 7) rather than 0x00,
-preventing brightness register zeroing. Backlight commands are written with dual
-latching and user toggle clicks force hardware updates without cached-state suppression.
+when on. Bit 7 normalizes on/off state. Off still sends HP's 0x64 value, but the
+earlier brightness-preservation explanation was incorrect: LC05 sends zero
+brightness whenever bit 7 is clear, whether input is 0x00 or 0x64.
+
+After a cold boot, one backlight-on command returned success but left readback
+at zero; the user confirmed the lights stayed off. After one GC10 heartbeat,
+one identical command returned 0xE4 and the user confirmed physical illumination.
+The old GUI first sent GC10 at its 30-second timer tick, explaining why repeated
+clicks appeared to fix startup.
+
+Keyboard writes now acquire access on demand before changing color or backlight.
+The backlight setter waits 100 ms for readback and retries at most three times;
+failure is reported and the GUI reloads actual state. Blind double writes were
+removed. Color updates preserve the existing 128-byte buffer and replace only
+RGB bytes 25..36, as HP's client does. BIOS calls are serialized and WMI result
+objects remain alive until output data has been read.
 
 ## EC logging and automated checks
 
@@ -132,7 +158,8 @@ sibling temporary file before atomic replacement. A failed write preserves the
 previous checkpoint and reports failure; cancellation detaches its handler.
 
 The GitHub build runs Tests/Regression.cs against the compiled application:
-fan protocol payload/order and failure behavior, legacy manual release, WMI
+fan protocol payload/order and failure behavior, heartbeat renewal/release,
+canonical dropdown labels, keyboard handshake/retries/metadata, legacy manual release, WMI
 RPM, GPU presets, fresh-process sensor reload, custom/legacy sensors, fan-program
 suspend/terminate restoration, partial/locked log files and redirected help.
 These tests use mocks and never open hardware interfaces.
@@ -143,8 +170,8 @@ OmenMon Build after pushing. No local build is required.
 ## Laptop checks for the new artifact
 
 1. At idle, Max -> Auto/Default, then Max -> Auto/Performance -> Default.
-   Allow approximately 30 seconds for RPM to settle; do not treat Max readback
-   alone as proof of automatic mode.
+   On AC allow about 120 seconds since the last heartbeat, then check response
+   under load. Max readback or an expired UI countdown alone does not prove Auto.
 2. Constant -> Auto and Fan Program -> Auto, both from the main window and tray.
    Confirm fixed targets remain steady across GUI refreshes.
 3. Save settings, restart, and confirm CPU/GPU sensor addresses/readings persist.

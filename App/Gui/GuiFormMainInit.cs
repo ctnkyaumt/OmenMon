@@ -690,6 +690,9 @@ namespace OmenMon.AppGui {
             this.Tip.SetToolTip(this.RdoFanProg, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "Prog"));
             this.Tip.SetToolTip(this.CmbFanProg, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "Prog" + Gui.T_CMB));
             this.Tip.SetToolTip(this.RdoFanAuto, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "Auto"));
+            if(Context.Op.Platform.Profile.UsesBiosFanControl)
+                this.Tip.SetToolTip(this.RdoFanAuto,
+                    Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "AutoVictus"));
             this.Tip.SetToolTip(this.CmbFanMode, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "Mode"));
             this.Tip.SetToolTip(this.RdoFanConst, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "Const"));
             this.Tip.SetToolTip(this.RdoFanMax, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "Max"));

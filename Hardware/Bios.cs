@@ -50,6 +50,7 @@ namespace OmenMon.Hardware.Bios {
 
         private CimSession session;
         private CimInstance biosData, biosMethods;
+        private readonly object SendLock = new object();
 #endregion
 
 #region Initialization & Disposal
@@ -115,62 +116,59 @@ namespace OmenMon.Hardware.Bios {
             byte outDataSize, // One of 0, 4, 128, 1024, or 4096 only
             out byte[] outData) {
 
-            // Initialize the output variable
-            outData = new byte[outDataSize];
+            lock(SendLock) {
+                // Initialize the output variable
+                outData = new byte[outDataSize];
 
-            try {
-                using(CimInstance input = new CimInstance(biosData)) {
+                try {
+                    using(CimInstance input = new CimInstance(biosData)) {
 
-                    // Define the input arguments for the request
-                    input.CimInstanceProperties["Command"].Value = command;
-                    input.CimInstanceProperties["CommandType"].Value = commandType;
+                        // Define the input arguments for the request
+                        input.CimInstanceProperties["Command"].Value = command;
+                        input.CimInstanceProperties["CommandType"].Value = commandType;
 
-                    if(inData == null) {
+                        if(inData == null) {
 
-                        // Allow for a call with no data payload
-                        input.CimInstanceProperties["Size"].Value = 0;
+                            // Allow for a call with no data payload
+                            input.CimInstanceProperties["Size"].Value = 0;
 
-                    } else {
+                        } else {
 
-                        input.CimInstanceProperties[BIOS_DATA_FIELD].Value = inData;
-                        input.CimInstanceProperties["Size"].Value = inData.Length;
+                            input.CimInstanceProperties[BIOS_DATA_FIELD].Value = inData;
+                            input.CimInstanceProperties["Size"].Value = inData.Length;
 
-                    }
+                        }
 
-                    // Prepare the method parameters
-                    CimMethodParametersCollection methodParams = new();
-                    methodParams.Add(CimMethodParameter.Create("InData", input, CimType.Instance, CimFlags.In));
+                        // Prepare the method parameters
+                        using CimMethodParametersCollection methodParams = new();
+                        methodParams.Add(CimMethodParameter.Create("InData", input, CimType.Instance, CimFlags.In));
 
-                    // Call the pertinent method depending on the data size
-                    CimMethodResult result = this.session.InvokeMethod(
-                        this.biosMethods, BIOS_METHOD + Convert.ToString(outDataSize), methodParams);
+                        // Call the pertinent method depending on the data size
+                        using CimMethodResult result = this.session.InvokeMethod(
+                            this.biosMethods, BIOS_METHOD + Convert.ToString(outDataSize), methodParams);
 
-                    // Retrieve the resulting data
-                    using(CimInstance resultData = result.OutParameters["OutData"].Value as CimInstance) {
+                        // Retrieve the resulting data
+                        using(CimInstance resultData = result.OutParameters["OutData"].Value as CimInstance) {
 
-                        // Clean up
-                        input.Dispose();
-                        methodParams.Dispose();
-                        result.Dispose();
+                            // Populate the output data variable
+                            if(outDataSize != 0)
+                                outData = resultData.CimInstanceProperties["Data"].Value as byte[];
 
-                        // Populate the output data variable
-                        if(outDataSize != 0)
-                            outData = resultData.CimInstanceProperties["Data"].Value as byte[];
+                            // Return the status code
+                            return Convert.ToInt32(resultData.CimInstanceProperties[BIOS_RETURN_CODE_FIELD].Value);
 
-                        // Return the status code
-                        return Convert.ToInt32(resultData.CimInstanceProperties[BIOS_RETURN_CODE_FIELD].Value);
+                        }
 
                     }
 
+                } catch {
+
+                    // Return negative status code
+                    // for client-side exceptions
+                    return -1;
                 }
 
-            } catch {
-
-                // Return negative status code
-                // for client-side exceptions
-                return -1;
             }
-
         }
 
         // Wrapper for sending a BIOS command in case there is nothing to be sent as input

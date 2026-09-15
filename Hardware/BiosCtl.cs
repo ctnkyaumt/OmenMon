@@ -3,6 +3,7 @@
      //  https://omenmon.github.io/
 
 using System;
+using System.Threading;
 using System.Text;
 using OmenMon.Library;
 
@@ -115,14 +116,32 @@ namespace OmenMon.Hardware.Bios {
         // Retrieves the keyboard backlight status
         public Backlight GetBacklight() {
             byte[] outData;
-            Check(Send(Cmd.Keyboard, 0x04, new byte[4] {0x00, 0x00, 0x00, 0x00}, 4, out outData));
+            Check(Send(Cmd.Keyboard, 0x04, new byte[4] {0x00, 0x00, 0x00, 0x00}, 4, out outData), true);
             // See: Backlight (enum)
             return (Backlight) outData[0];
         }
 
         // Sets the keyboard backlight status
         public void SetBacklight(Backlight value) {
-            Check(Send(Cmd.Keyboard, 0x05, new byte[4] {(byte) value, 0x00, 0x00, 0x00}));
+            SetBacklightVerified(value, level => Check(Send(Cmd.Keyboard, 0x05,
+                new byte[4] {(byte) level, 0x00, 0x00, 0x00}), true),
+                GetBacklight, () => Thread.Sleep(100));
+        }
+
+        internal static void SetBacklightVerified(Backlight value, Action<Backlight> write,
+            Func<Backlight> read, Action wait) {
+            for(int attempt = 0; attempt < 3; attempt++) {
+                try {
+                    write(value);
+                    wait();
+                    if(((byte)read() & 0x80) == ((byte)value & 0x80))
+                        return;
+                } catch(BiosException) {
+                    if(attempt == 2) throw;
+                    wait();
+                }
+            }
+            throw new BiosException("Keyboard backlight did not confirm the requested state.");
         }
 
         // Toggles the keyboard backlight status
@@ -140,7 +159,21 @@ namespace OmenMon.Hardware.Bios {
 
         // Updates the keyboard backlight color table
         public void SetColorTable(ColorTable data) {
-            Check(Send(Cmd.Keyboard, 0x03, Conv.GetByteArray(data)));
+            byte[] current;
+            Check(Send(Cmd.Keyboard, 0x02, new byte[4], 128, out current), true);
+            Check(Send(Cmd.Keyboard, 0x03, CreateColorTablePayload(current, data)), true);
+        }
+
+        internal static byte[] CreateColorTablePayload(byte[] current, ColorTable data) {
+            if(current == null || current.Length != 128 || current[0] != 3 ||
+                data.ZoneCount != 3 || data.Zone == null || data.Zone.Length != 4)
+                throw new ArgumentException("Expected a four-slot keyboard color table.");
+            // HP reads the original buffer and changes only RGB bytes 25..36.
+            // Preserve firmware metadata instead of sending zero-filled padding.
+            byte[] payload = (byte[])current.Clone();
+            byte[] colors = Conv.GetByteArray(data);
+            Array.Copy(colors, 25, payload, 25, 12);
+            return payload;
         }
 #endregion
 
@@ -305,7 +338,7 @@ namespace OmenMon.Hardware.Bios {
         // Retrieves the number of fans
         public byte GetFanCount() {
             byte[] outData;
-            Check(Send(Cmd.Default, 0x10, new byte[4] {0x00, 0x00, 0x00, 0x00}, 4, out outData));
+            Check(Send(Cmd.Default, 0x10, new byte[4] {0x00, 0x00, 0x00, 0x00}, 4, out outData), true);
             // Byte #0: Number of Fans (Observed: 0x02)
             return outData[0];
         }
@@ -390,7 +423,7 @@ namespace OmenMon.Hardware.Bios {
         public byte GetTemperature() {
             byte[] outData;
             Check(Send(Cmd.Default, 0x23, new byte[4] {0x01, 0x00, 0x00, 0x00}, 4, out outData));
-            // Input Byte #0 & #1: Whether 0x00 or 0x01 all yield the same result
+            // 8BD4: selector 1 returns the EST3 board-temperature sensor.
             // Output Byte #0: Thermal sensor value (Observed: 0x1D ... 0x31)
             return outData[0];
         }
