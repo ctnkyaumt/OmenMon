@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Runtime.Remoting.Messaging;
 using System.Runtime.Remoting.Proxies;
 using System.Runtime.Serialization;
+using System.Windows.Forms;
 using OmenMon.AppCli;
 using OmenMon.Hardware.Bios;
 using OmenMon.Hardware.Platform;
@@ -203,6 +204,9 @@ internal static class Regression {
     }
     static void ControlHeartbeat() {
         InstallBios();
+        var timeout = typeof(Hw).GetMethod("BiosControlTimeout", BindingFlags.NonPublic | BindingFlags.Static);
+        Equal(120, (int)timeout.Invoke(null, new object[] { PowerLineStatus.Online }), "AC OEM control timeout");
+        Equal(600, (int)timeout.Invoke(null, new object[] { PowerLineStatus.Offline }), "battery OEM control timeout");
         var fans = Fans(victus);
         fans.MaintainControl();
         Equal(0, calls.Count, "startup Auto does not acquire OEM fan control");
@@ -211,11 +215,15 @@ internal static class Regression {
         Equal("heartbeat", calls.Single(), "fixed control renews watchdog");
         calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Performance);
         Equal("mode:49:True", calls.Single(), "Auto changes mode without renewing control or writing RPM");
-        Check(fans.GetCountdown() > 0 && fans.GetCountdown() <= 120, "Auto displays estimated handback countdown");
+        Check(fans.GetCountdown() > 0 && fans.GetCountdown() <= 600, "Auto displays estimated handback countdown");
+        typeof(Hw).GetField("LastBiosHeartbeatTimeout", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, 600);
+        typeof(Hw).GetField("LastBiosHeartbeat", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null,
+            Stopwatch.GetTimestamp() - 121L * Stopwatch.Frequency);
+        Check(fans.GetCountdown() > 0, "battery countdown persists beyond AC timeout");
         calls.Clear(); fans.MaintainControl(); fans.MaintainControl();
         Equal(0, calls.Count, "Auto refresh never extends watchdog");
         typeof(Hw).GetField("LastBiosHeartbeat", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null,
-            Stopwatch.GetTimestamp() - 121L * Stopwatch.Frequency);
+            Stopwatch.GetTimestamp() - 601L * Stopwatch.Frequency);
         Equal(0, fans.GetCountdown(), "expired watchdog hides countdown");
         fans.SetOff(true); calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
         Equal("max:True|mode:48:True", string.Join("|", calls), "Off handback restores cooling without renewing watchdog");

@@ -59,14 +59,22 @@ OmenMon now sends the heartbeat when acquiring fixed/Max/Off/program control,
 renews it only while that control is active, and stops renewal for Auto and exit.
 Auto applies the requested firmware mode without writing a fixed fan target.
 Off -> Auto first raises cooling to Max while waiting for the session to expire.
-The displayed countdown estimates 120 seconds since the last successful local
-heartbeat; it is not an EC register or proof of firmware state. Keyboard writes
-also require GC10 and restart that wait.
+The displayed countdown estimates 120 seconds on AC or 600 seconds on battery
+since the last successful local heartbeat. The power source is captured at that
+heartbeat. This is not an EC register or proof of firmware state. Keyboard
+writes also require GC10 and restart that wait.
 
-An initial battery Max -> Performance test stayed at Max beyond two minutes.
-Battery recovery is under separate validation; AC timing must not be assumed
-to cover battery operation. HP's software fan controller is a different policy
-from the firmware's native curve. Its manual slider midpoint is not an Auto API.
+A battery trial on BIOS F.29 started from native Auto (fans 0/0, EC `AB=08`),
+sent one GC10 heartbeat and a 3500/3500 RPM manual target, then requested
+Default/Auto after 15 seconds. With no further writes, fans stayed near 3500/3500
+and `AB=00` through 601 seconds from the heartbeat. At the next five-second
+sample, 606 seconds from the heartbeat, fans were 0/0 and `AB=08`; battery
+status stayed on DC throughout. This supports a roughly ten-minute native
+handback on battery for this machine, rather than the AC timing. Earlier tests
+stopped too soon to observe it. Only one pure-WMI battery timing trial has
+completed, so the countdown remains an estimate. HP's software
+fan controller is a different policy from the firmware's native curve. Its
+manual slider midpoint is not an Auto API.
 
 The Performance label disappearing was a separate UI defect. Value 0x31 also
 has enum aliases Turbo and L7; Enum.GetName returned Turbo, which was absent from
@@ -170,8 +178,9 @@ OmenMon Build after pushing. No local build is required.
 ## Laptop checks for the new artifact
 
 1. At idle, Max -> Auto/Default, then Max -> Auto/Performance -> Default.
-   On AC allow about 120 seconds since the last heartbeat, then check response
-   under load. Max readback or an expired UI countdown alone does not prove Auto.
+   On AC allow about 120 seconds; on battery allow about ten minutes since the
+   last heartbeat, then check response under load. Max readback or an expired UI
+   countdown alone does not prove Auto.
 2. Constant -> Auto and Fan Program -> Auto, both from the main window and tray.
    Confirm fixed targets remain steady across GUI refreshes.
 3. Save settings, restart, and confirm CPU/GPU sensor addresses/readings persist.

@@ -6,6 +6,7 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Collections.Generic;
+using System.Windows.Forms;
 using Microsoft.Win32;
 using OmenMon.Hardware.Ec;
 using OmenMon.Hardware.Bios;
@@ -59,12 +60,19 @@ namespace OmenMon.Library {
         public static IBiosCtl Bios;
         internal static readonly object BiosControlLock = new object();
         private static long LastBiosHeartbeat;
+        private static int LastBiosHeartbeatTimeout;
+
+        private static int BiosControlTimeout(PowerLineStatus power) {
+            // Measured on Victus 8BD4: about 120 s on AC, 600 s on battery.
+            return power == PowerLineStatus.Offline ? 600 : 120;
+        }
 
         // GC10 renews OEM control on Victus, including keyboard write access.
-        // A successful call starts a firmware watchdog of about two minutes.
+        // Record the power source at the heartbeat; the countdown is an estimate.
         public static void BiosHeartbeat() {
             lock(BiosControlLock) {
                 Bios.GetFanCount();
+                LastBiosHeartbeatTimeout = BiosControlTimeout(SystemInformation.PowerStatus.PowerLineStatus);
                 LastBiosHeartbeat = Stopwatch.GetTimestamp();
             }
         }
@@ -74,7 +82,7 @@ namespace OmenMon.Library {
                 lock(BiosControlLock) {
                     if(LastBiosHeartbeat == 0) return 0;
                     double elapsed = (Stopwatch.GetTimestamp() - LastBiosHeartbeat) / (double)Stopwatch.Frequency;
-                    return Math.Max(0, (int)Math.Ceiling(120 - elapsed));
+                    return Math.Max(0, (int)Math.Ceiling(LastBiosHeartbeatTimeout - elapsed));
                 }
             }
         }

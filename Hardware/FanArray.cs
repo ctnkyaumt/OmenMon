@@ -259,7 +259,7 @@ namespace OmenMon.Hardware.Platform {
                 if(Profile.UsesBiosFanControl) {
                     // GC10 is an OEM-control heartbeat, despite its "fan count" name.
                     // Stop renewing it: the EC returns to its native thermal policy
-                    // after about 120 seconds. GC1A/GC27 alone do not release targets.
+                    // after its AC/DC watchdog expires. GC1A/GC27 alone do not release targets.
                     KeepBiosControl = false;
                     if(LastSetOff)
                         Hw.Bios.SetMaxFan(true); // Do not wait for expiry with fans off.
