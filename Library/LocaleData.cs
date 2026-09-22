@@ -265,7 +265,7 @@ namespace OmenMon.Library.Locale {
                 ["GuiTipFanProg"] = "Fan program" + Environment.NewLine + "Speed will follow temperature" + Environment.NewLine + "according to your preferences",
                 ["GuiTipFanProgCmb"] = "Choose a fan program from the drop-down list",
                 ["GuiTipFanAuto"] = "Automatic mode (the default setting)",
-                ["GuiTipFanAutoVictus"] = "Firmware automatic cooling. Manual control may persist for about two minutes on AC or ten minutes on battery. The countdown estimates the wait; keyboard changes restart it.",
+                ["GuiTipFanAutoVictus"] = "Firmware automatic cooling. Manual control may persist for about two minutes on AC or ten minutes or longer on battery. The countdown estimates the wait and may reach zero before firmware takes over; keyboard changes restart it.",
                 ["GuiTipFanMode"] = "Choose a fan mode from the drop-down list",
                 ["GuiTipFanConst"] = "Constant speed mode" + Environment.NewLine + "Use trackbars to set each fan level",
                 ["GuiTipFanMax"] = "Maximum speed mode" + Environment.NewLine + "Fans operate at maximum speed" + Environment.NewLine + "(5,500 and 5,700 rpm)",

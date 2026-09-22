@@ -63,7 +63,8 @@ namespace OmenMon.Library {
         private static int LastBiosHeartbeatTimeout;
 
         private static int BiosControlTimeout(PowerLineStatus power) {
-            // Measured on Victus 8BD4: about 120 s on AC, 600 s on battery.
+            // Victus 8BD4 estimate: about 120 s on AC; battery handback has
+            // occurred at 606-839 s. Other clients can extend the wait.
             return power == PowerLineStatus.Offline ? 600 : 120;
         }
 

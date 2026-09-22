@@ -69,12 +69,25 @@ sent one GC10 heartbeat and a 3500/3500 RPM manual target, then requested
 Default/Auto after 15 seconds. With no further writes, fans stayed near 3500/3500
 and `AB=00` through 601 seconds from the heartbeat. At the next five-second
 sample, 606 seconds from the heartbeat, fans were 0/0 and `AB=08`; battery
-status stayed on DC throughout. This supports a roughly ten-minute native
-handback on battery for this machine, rather than the AC timing. Earlier tests
-stopped too soon to observe it. Only one pure-WMI battery timing trial has
-completed, so the countdown remains an estimate. HP's software
+status stayed on DC throughout. A repeat with the exact CI artifact on
+2026-09-23, using WMI fan and temperature reads but no EC reads, stayed at
+3500/3500 RPM through 834 seconds from the heartbeat and first showed 0/0 at
+839 seconds. Two subsequent samples confirmed 0/0 at about 30 C. Both
+trials confirm delayed native idle handback on battery, with unexplained
+timing variation. The 600-second countdown tracks only this app's last local
+heartbeat and can reach zero before firmware releases control; other clients
+may also extend the wait. HP's software
 fan controller is a different policy from the firmware's native curve. Its
 manual slider midpoint is not an Auto API.
+
+The upstream Linux `hp-wmi` Victus-S Auto path sends a zero/zero fan target
+and a GC10 heartbeat ([source](https://github.com/torvalds/linux/blob/master/drivers/platform/x86/hp/hp-wmi.c)).
+That sequence is not a safe release on this F.29 8BD4: the local zero-target
+trial stopped both fans while CPU temperature rose to 74 C, before the guarded
+load was stopped and Max cooling restored. OmenCore also reports that zero
+targets can leave other Victus fans in manual zero mode
+([report](https://github.com/theantipopau/omencore/blob/main/docs/CHANGELOG_v2.8.1.md)).
+Do not substitute a zero target for the measured watchdog handback on this board.
 
 The Performance label disappearing was a separate UI defect. Value 0x31 also
 has enum aliases Turbo and L7; Enum.GetName returned Turbo, which was absent from
@@ -178,7 +191,7 @@ OmenMon Build after pushing. No local build is required.
 ## Laptop checks for the new artifact
 
 1. At idle, Max -> Auto/Default, then Max -> Auto/Performance -> Default.
-   On AC allow about 120 seconds; on battery allow about ten minutes since the
+   On AC allow about 120 seconds; on battery allow ten minutes or longer since the
    last heartbeat, then check response under load. Max readback or an expired UI
    countdown alone does not prove Auto.
 2. Constant -> Auto and Fan Program -> Auto, both from the main window and tray.
