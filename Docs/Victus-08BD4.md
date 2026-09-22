@@ -88,8 +88,10 @@ battery thermal fan curve. No safety guard or manual fan write was needed.
 The same artifact then entered Max from native idle at 41 C on battery and
 requested Auto/Performance after 15 seconds. Fans held near 5800/6100 RPM
 through 1002 seconds after Max was requested, while CPU cooled to 27 C and
-battery remained connected. The bounded trial ended without a measured Max
-handback; requesting Default on exit did not itself prove release. Max -> Auto
+battery remained connected. A read-only continuation still measured about
+5800/6100 RPM at +1215 seconds with CPU 28 C and battery at 66%. The trial
+ended without a measured Max handback; requesting Default on exit did not
+itself prove release. Max -> Auto
 on battery therefore remains unverified. Do not infer recovery from the
 countdown or from the application's selected Auto label.
 
