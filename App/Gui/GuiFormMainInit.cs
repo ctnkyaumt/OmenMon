@@ -712,7 +712,8 @@ namespace OmenMon.AppGui {
             this.Tip.SetToolTip(this.BarFan1Rte, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "1" + Gui.S_RTE + Gui.T_BAR));
             this.Tip.SetToolTip(this.TrkFan0Lvl, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "0" + Gui.S_LVL));
             this.Tip.SetToolTip(this.TrkFan1Lvl, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "1" + Gui.S_LVL));
-            this.Tip.SetToolTip(this.LblFanCountdown, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN + "Countdown"));
+            this.Tip.SetToolTip(this.LblFanCountdown, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_FAN +
+                (Context.Op.Platform.Profile.UsesBiosFanControl ? "CountdownVictus" : "Countdown")));
 
             // Keyboard
             this.Tip.SetToolTip(this.ChkKbdBacklight, Config.Locale.Get(Config.L_GUI_TIP + Gui.G_KBD + "Backlight"));

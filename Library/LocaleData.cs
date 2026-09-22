@@ -262,6 +262,7 @@ namespace OmenMon.Library.Locale {
                 ["GuiTipFan0Lvl"] = "CPU fan level [krpm]" + Environment.NewLine + "Custom speed: move slider" + Environment.NewLine + "and click button to apply",
                 ["GuiTipFan1Lvl"] = "GPU fan level [krpm]" + Environment.NewLine + "Custom speed: move slider" + Environment.NewLine + "and click button to apply",
                 ["GuiTipFanCountdown"] = "If applicable, this area shows the countdown until" + Environment.NewLine + "the BIOS reverts back to the automatic defaults" + Environment.NewLine + "Select Const to prevent the timer from running out",
+                ["GuiTipFanCountdownVictus"] = "Estimated wait since this app's last fan-control heartbeat. Firmware may take longer to resume Auto; keyboard changes restart the wait.",
                 ["GuiTipFanProg"] = "Fan program" + Environment.NewLine + "Speed will follow temperature" + Environment.NewLine + "according to your preferences",
                 ["GuiTipFanProgCmb"] = "Choose a fan program from the drop-down list",
                 ["GuiTipFanAuto"] = "Automatic mode (the default setting)",
