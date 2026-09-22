@@ -80,6 +80,19 @@ may also extend the wait. HP's software
 fan controller is a different policy from the firmware's native curve. Its
 manual slider midpoint is not an Auto API.
 
+After the 2026-09-23 idle handback, an eight-worker CPU load ran for about three minutes
+on battery. CPU temperature peaked at 48 C and the fans stayed at 0/0. The
+load did not reach the native fan threshold, so this trial does not verify the
+battery thermal fan curve. No safety guard or manual fan write was needed.
+
+The same artifact then entered Max from native idle at 41 C on battery and
+requested Auto/Performance after 15 seconds. Fans held near 5800/6100 RPM
+through 1002 seconds after Max was requested, while CPU cooled to 27 C and
+battery remained connected. The bounded trial ended without a measured Max
+handback; requesting Default on exit did not itself prove release. Max -> Auto
+on battery therefore remains unverified. Do not infer recovery from the
+countdown or from the application's selected Auto label.
+
 The upstream Linux `hp-wmi` Victus-S Auto path sends a zero/zero fan target
 and a GC10 heartbeat ([source](https://github.com/torvalds/linux/blob/master/drivers/platform/x86/hp/hp-wmi.c)).
 That sequence is not a safe release on this F.29 8BD4: the local zero-target
@@ -191,9 +204,10 @@ OmenMon Build after pushing. No local build is required.
 ## Laptop checks for the new artifact
 
 1. At idle, Max -> Auto/Default, then Max -> Auto/Performance -> Default.
-   On AC allow about 120 seconds; on battery allow ten minutes or longer since the
-   last heartbeat, then check response under load. Max readback or an expired UI
-   countdown alone does not prove Auto.
+   On AC allow about 120 seconds. On battery, the 2026-09-23 Max trial stayed
+   latched beyond 16 minutes, so further observation is needed before calling
+   this path verified. Check response under load after RPM returns to native
+   idle. Max readback or an expired UI countdown alone does not prove Auto.
 2. Constant -> Auto and Fan Program -> Auto, both from the main window and tray.
    Confirm fixed targets remain steady across GUI refreshes.
 3. Save settings, restart, and confirm CPU/GPU sensor addresses/readings persist.
