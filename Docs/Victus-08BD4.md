@@ -59,6 +59,9 @@ OmenMon now sends the heartbeat when acquiring fixed/Max/Off/program control,
 renews it only while that control is active, and stops renewal for Auto and exit.
 Auto applies the requested firmware mode without writing a fixed fan target.
 Off -> Auto first raises cooling to Max while waiting for the session to expire.
+This also covers a single stopped fan in an asymmetric manual target, and a
+failed zero-target write that may have partially applied. Invalid target arrays
+are rejected before acquiring OEM control.
 The displayed countdown estimates 120 seconds on AC or 600 seconds on battery
 since the last successful local heartbeat. The power source is captured at that
 heartbeat. This is not an EC register or proof of firmware state. Keyboard
@@ -113,6 +116,10 @@ All GUI and fan-program exit paths use RestoreAutomatic. Choosing the same
 mode in the tray also restores Auto and stops a running program. Fixed speed
 is applied after mode/power notifications. The GUI does not continually reapply
 mode based on an unverified Victus EC countdown, which could undo fixed speed.
+Fan-program termination disables future updates before attempting hardware
+restoration, even if WMI reports an error. GPU restoration is attempted after
+a fan restore failure. Switching programs, including AC/battery selection,
+preserves the mode and GPU settings from before the first program started.
 
 Victus ignores legacy XML options requesting raw EC fan control/manual toggles.
 Unknown manual/countdown registers are not accessed through these controls.

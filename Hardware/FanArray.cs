@@ -52,6 +52,7 @@ namespace OmenMon.Hardware.Platform {
     // Implements a mechanism for interacting with the fan system
     public class FanArray : IFanArray {
         private bool KeepBiosControl;
+        private bool MayHaveStoppedFan;
 
         // Fan array
         public IFan[] Fan { get; private set; }
@@ -146,10 +147,16 @@ namespace OmenMon.Hardware.Platform {
         public void SetLevels(byte[] levels) {
             lock(Hw.BiosControlLock) {
                 if(Profile.UsesBiosFanControl) {
+                    if(levels == null || levels.Length != PlatformData.FanCount)
+                        throw new ArgumentException("Expected CPU and GPU fan levels.", nameof(levels));
                     // Use HP's WMI payload regardless of legacy XML flags.
                     // Report failures instead of claiming the target was accepted.
                     Hw.BiosHeartbeat();
+                    // A rejected WMI call may still have applied one target.
+                    bool stopsFan = levels[0] == 0 || levels[1] == 0;
+                    MayHaveStoppedFan |= stopsFan;
                     Hw.Bios.SetFanLevel(levels);
+                    MayHaveStoppedFan = stopsFan;
                     KeepBiosControl = true;
                     LastSetOff = levels[0] == 0 && levels[1] == 0;
                     LastSetMax = false;
@@ -220,6 +227,7 @@ namespace OmenMon.Hardware.Platform {
                 if(Profile.UsesBiosFanControl)
                     Hw.BiosHeartbeat();
                 Hw.BiosSet(Hw.Bios.SetMaxFan, true);
+                MayHaveStoppedFan = false;
                 KeepBiosControl = Profile.UsesBiosFanControl;
                 LastSetMax = true;
                 LastSetOff = false;
@@ -261,8 +269,12 @@ namespace OmenMon.Hardware.Platform {
                     // Stop renewing it: the EC returns to its native thermal policy
                     // after its AC/DC watchdog expires. GC1A/GC27 alone do not release targets.
                     KeepBiosControl = false;
-                    if(LastSetOff)
-                        Hw.Bios.SetMaxFan(true); // Do not wait for expiry with fans off.
+                    if(MayHaveStoppedFan) {
+                        // Either fan may be off, including asymmetric targets.
+                        // Do not wait for the watchdog with cooling disabled.
+                        Hw.Bios.SetMaxFan(true);
+                        MayHaveStoppedFan = false;
+                    }
                     SetModeInternal(mode, true);
                     LastSetOff = LastSetMax = false;
                     return;

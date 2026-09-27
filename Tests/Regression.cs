@@ -91,6 +91,9 @@ internal static class Regression {
         Check(!fans.GetManual(), "no unverified manual read");
         fans.SetManual(true); fans.SetCountdown(120);
         Equal(0, calls.Count, "no unverified EC writes");
+        Throws(() => fans.SetLevels(null), "null levels rejected");
+        Throws(() => fans.SetLevels(new byte[] {35}), "incomplete levels rejected");
+        Equal(0, calls.Count, "invalid levels do not acquire OEM control");
         fans.SetLevels(new byte[] { 35, 36 });
         Equal("heartbeat|levels:35,36", string.Join("|", calls), "Victus ignores legacy EC flag");
         calls.Clear();
@@ -197,10 +200,20 @@ internal static class Regression {
         var program = new FanProgram(platform, (severity, message) => { });
         Check(program.Run("Regression"), "program starts");
         Equal("mode:49:False|gpu:87|heartbeat|levels:35,36", string.Join("|", calls), "policy before fixed speed");
+        Check(program.Run("Regression", true), "program switches without replacing original state");
         calls.Clear(); Check(program.Suspend(), "program suspends");
         Equal("mode:48:True|gpu:75", string.Join("|", calls), "suspend restores exact state");
         program.Resume(); calls.Clear(); Check(program.Terminate(), "program terminates");
         Equal("mode:48:True|gpu:75", string.Join("|", calls), "terminate restores Auto");
+        program.Run("Regression"); failMode = true; calls.Clear();
+        Throws(() => program.Terminate(), "failed Auto restoration is reported");
+        Check(!program.IsEnabled && !program.IsSuspended && !program.IsAlternate, "failed termination stops program");
+        Equal("gpu:75", string.Join("|", calls), "GPU restoration attempted after fan failure");
+        calls.Clear();
+        Check(!program.Update(), "failed termination cannot reapply targets");
+        platform.Fans.MaintainControl();
+        Equal(0, calls.Count, "failed termination cannot renew heartbeat");
+        failMode = false;
     }
     static void ControlHeartbeat() {
         InstallBios();
@@ -229,6 +242,19 @@ internal static class Regression {
         Equal("max:True|mode:48:True", string.Join("|", calls), "Off handback restores cooling without renewing watchdog");
         calls.Clear(); fans.MaintainControl();
         Equal(0, calls.Count, "Off-to-Auto stops renewal");
+        foreach(byte[] levels in new[] {new byte[] {0,35}, new byte[] {35,0}}) {
+            fans.SetLevels(levels);
+            Check(!fans.GetOff(), "one stopped fan is not the both-off UI state");
+            calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
+            Equal("max:True|mode:48:True", string.Join("|", calls), "Auto restores cooling for either stopped fan");
+        }
+        failLevels = true;
+        Throws(() => fans.SetLevels(new byte[] {0,35}), "partial zero-target failure reported");
+        failLevels = false; calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
+        Equal("max:True|mode:48:True", string.Join("|", calls), "failed zero-target write retains cooling safeguard");
+        fans.SetLevels(new byte[] {0,35}); fans.SetLevels(new byte[] {35,35});
+        calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
+        Equal("mode:48:True", string.Join("|", calls), "successful nonzero targets clear stopped-fan state");
         fans.SetMax(true); calls.Clear(); fans.MaintainControl();
         Equal("heartbeat", calls.Single(), "Max renews watchdog");
         fans.SetMax(false); calls.Clear(); fans.MaintainControl();

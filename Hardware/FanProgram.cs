@@ -144,14 +144,12 @@ namespace OmenMon.Hardware.Platform {
             // Set the alternate flag
             this.IsAlternate = isAlternate;
 
-            // Set the state flag
+            // Keep the original state when switching programs (including AC/DC).
+            if(!this.IsEnabled) {
+                this.LastFanMode = Platform.Fans.GetMode();
+                this.LastGpuPowerData = Platform.System.GetGpuPower();
+            }
             this.IsEnabled = true;
-
-            // Save the last fan mode
-            this.LastFanMode = Platform.Fans.GetMode();
-
-            // Save the last GPU power state
-            this.LastGpuPowerData = Platform.System.GetGpuPower();
 
             // Update the program
             Update();
@@ -173,10 +171,12 @@ namespace OmenMon.Hardware.Platform {
             this.IsSuspended = true;
 
             // Release fixed levels and restore firmware control in every exit path.
-            Platform.Fans.RestoreAutomatic(this.LastFanMode);
-
-            // Restore the previous GPU power settings
-            UpdateGpuPower(true, this.LastGpuPowerData);
+            try {
+                Platform.Fans.RestoreAutomatic(this.LastFanMode);
+            } finally {
+                // Fan restoration failure must not skip GPU restoration.
+                UpdateGpuPower(true, this.LastGpuPowerData);
+            }
 
             // Report success
             return true;
@@ -190,19 +190,21 @@ namespace OmenMon.Hardware.Platform {
             if(!this.IsEnabled)
                 return false;
 
-            // Release fixed levels and restore firmware control in every exit path.
-            Platform.Fans.RestoreAutomatic(this.LastFanMode);
-
-            // Restore the previous GPU power settings
-            UpdateGpuPower(true, this.LastGpuPowerData);
-
-            // Set the state flags
+            // Stop updates before hardware calls: a failed restore must not
+            // leave the program reapplying targets and renewing OEM control.
             this.IsAlternate = false;
             this.IsEnabled = false;
             this.IsSuspended = false;
 
-            // Reset data
-            Reset();
+            try {
+                Platform.Fans.RestoreAutomatic(this.LastFanMode);
+            } finally {
+                try {
+                    UpdateGpuPower(true, this.LastGpuPowerData);
+                } finally {
+                    Reset();
+                }
+            }
 
             // Update the status
             Status(Severity.Notice, Config.Locale.Get(Config.L_PROG + "End"));
