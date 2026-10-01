@@ -219,6 +219,11 @@ namespace OmenMon.AppGui {
 
         // Toggles the maximum fan speed on and off
         private void EventActionFanMax(object sender, EventArgs e) {
+            lock(Hw.BiosControlLock) { ApplyFanMax(sender, e); }
+        }
+
+        private void ApplyFanMax(object sender, EventArgs e) {
+            Context.Op.CancelAutoConfig();
 
             Context.Op.Program.Terminate();
 
@@ -239,6 +244,11 @@ namespace OmenMon.AppGui {
 
         // Toggles the fan on and off entirely
         private void EventActionFanOff(object sender, EventArgs e) {
+            lock(Hw.BiosControlLock) { ApplyFanOff(sender, e); }
+        }
+
+        private void ApplyFanOff(object sender, EventArgs e) {
+            Context.Op.CancelAutoConfig();
 
             Context.Op.Program.Terminate();
 
@@ -259,6 +269,11 @@ namespace OmenMon.AppGui {
 
         // Switches the fan mode
         private void EventActionFanMode(object sender, EventArgs e) {
+            lock(Hw.BiosControlLock) { ApplyFanMode(sender, e); }
+        }
+
+        private void ApplyFanMode(object sender, EventArgs e) {
+            Context.Op.CancelAutoConfig();
 
             BiosData.FanMode fanModeAsk = (BiosData.FanMode) Enum.Parse(
                 typeof(BiosData.FanMode),
@@ -268,13 +283,20 @@ namespace OmenMon.AppGui {
             Context.Op.Program.Terminate();
             Context.Op.Platform.Fans.RestoreAutomatic(fanModeAsk);
             GuiOp.SignalUserChange();
-            if(Context.FormMain != null)
+            if(Context.FormMain != null) {
+                Context.FormMain.ClearConstantFanSelection();
                 Context.FormMain.UpdateFanCtl();
+            }
             UpdateFan();
         }
 
         // Switches the fan program
         private void EventActionFanProg(object sender, EventArgs e) {
+            lock(Hw.BiosControlLock) { ApplyFanProgram(sender, e); }
+        }
+
+        private void ApplyFanProgram(object sender, EventArgs e) {
+            Context.Op.CancelAutoConfig();
 
             // Retrieve the current fan program
             string fanProgNameNow = Context.Op.Program.GetName();

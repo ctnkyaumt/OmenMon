@@ -10,7 +10,9 @@ using System.Runtime.Remoting.Messaging;
 using System.Runtime.Remoting.Proxies;
 using System.Runtime.Serialization;
 using System.Windows.Forms;
+using System.Threading;
 using OmenMon.AppCli;
+using OmenMon.AppGui;
 using OmenMon.Hardware.Bios;
 using OmenMon.Hardware.Platform;
 using OmenMon.Library;
@@ -47,11 +49,15 @@ internal static class Regression {
     }
     static readonly PlatformProfile victus = PlatformProfile.ForProduct("8bd4");
     static readonly List<string> calls = new List<string>();
-    static bool failMode, failLevels;
+    static bool failMode, failLevels, failMax, failHeartbeat, forcedGpuRead;
     static ISettings FakeSettings() {
         return new Proxy<ISettings>((name, args) => {
+            if(name == "IsFullPower") return false;
             if(name == "GetSystemData") return new BiosData.SystemData { ThermalPolicy = BiosData.ThermalPolicyVersion.V1 };
-            if(name == "GetGpuPower") return new BiosData.GpuPowerData(new byte[] { 0, 1, 1, 75 });
+            if(name == "GetGpuPower") {
+                forcedGpuRead |= (bool)args[0];
+                return new BiosData.GpuPowerData(new byte[] { 0, 1, 1, 75 });
+            }
             if(name == "GetGpuCustomTgp") return BiosData.GpuCustomTgp.Off;
             if(name == "GetGpuPpab") return BiosData.GpuPpab.Off;
             if(name == "SetGpuPower") { calls.Add("gpu:" + ((BiosData.GpuPowerData)args[0]).PeakTemperature); return null; }
@@ -59,11 +65,14 @@ internal static class Regression {
         }).Value;
     }
     static void InstallBios() {
-        failMode = failLevels = false;
+        failMode = failLevels = failMax = failHeartbeat = forcedGpuRead = false;
         typeof(Hw).GetField("LastBiosHeartbeat", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, 0L);
         calls.Clear();
         Hw.Bios = new Proxy<IBiosCtl>((name, args) => {
-            if(name == "GetFanCount") { calls.Add("heartbeat"); return (byte)2; }
+            if(name == "GetFanCount") {
+                if(failHeartbeat) throw new IOException("simulated rejected heartbeat");
+                calls.Add("heartbeat"); return (byte)2;
+            }
             if(name == "SetFanLevel") {
                 if(failLevels) throw new IOException("simulated rejected level");
                 calls.Add("levels:" + string.Join(",", (byte[])args[0]));
@@ -74,7 +83,10 @@ internal static class Regression {
                 calls.Add("mode:" + (byte)(BiosData.FanMode)args[0] + ":" + args[1]);
                 return null;
             }
-            if(name == "SetMaxFan") { calls.Add("max:" + args[0]); return null; }
+            if(name == "SetMaxFan") {
+                if(failMax) throw new IOException("simulated rejected Max");
+                calls.Add("max:" + args[0]); return null;
+            }
             if(name == "GetFanLevel") return new byte[] { 58, 61 };
             throw new Exception("Unexpected BIOS call: " + name);
         }).Value;
@@ -145,6 +157,16 @@ internal static class Regression {
             Equal(level == BiosData.GpuPowerLevel.Maximum ? BiosData.GpuPpab.On : BiosData.GpuPpab.Off, power.Ppab, "PPAB preset");
         }
         Equal((byte)75, new BiosData.GpuPowerData(new byte[] { 0, 1, 1, 75 }).PeakTemperature, "readback retains original threshold");
+        var settings = (Settings)FormatterServices.GetUninitializedObject(typeof(Settings));
+        Set(settings, "GpuPower", new BiosData.GpuPowerData(new byte[] {0,1,1,75}));
+        Hw.Bios = new Proxy<IBiosCtl>((name, args) => {
+            if(name == "SetGpuPower") throw new IOException("simulated partially applied GPU write");
+            if(name == "GetGpuPower") return new BiosData.GpuPowerData(new byte[] {1,0,1,87});
+            throw new Exception("Unexpected GPU call: " + name);
+        }).Value;
+        Throws(() => settings.SetGpuPower(new BiosData.GpuPowerData(BiosData.GpuPowerLevel.Maximum)), "failed GPU write reported");
+        Check(settings.GpuPower == null, "failed GPU write invalidates cached state");
+        Equal((byte)87, settings.GetGpuPower().PeakTemperature, "query after failed write reads firmware");
     }
     static void LoadSensors(string sensors, PlatformProfile profile) {
         File.WriteAllText(Config.FilePath, "<OmenMon><Config><Temperature>" + sensors + "</Temperature></Config></OmenMon>");
@@ -187,10 +209,13 @@ internal static class Regression {
         InstallBios(); Config.FanLevelNeedManual = false; Config.FanProgramModeCheckFirst = false;
         var platform = (Platform)FormatterServices.GetUninitializedObject(typeof(Platform));
         Set(platform, "Fans", Fans(victus)); Set(platform, "System", FakeSettings());
+        Set(platform, "Profile", victus);
+        int temperature = 50;
+        bool fresh = true;
         Set(platform, "Temperature", new IPlatformReadComponent[] {
             new Proxy<IPlatformReadComponent>((name, args) => {
-                if(name == "Update") return true;
-                if(name == "GetValue") return 50;
+                if(name == "Update") return fresh;
+                if(name == "GetValue") return temperature;
                 throw new Exception("Unexpected sensor call: " + name);
             }).Value
         });
@@ -199,6 +224,7 @@ internal static class Regression {
             BiosData.GpuPowerLevel.Maximum, new SortedDictionary<byte, byte[]> { { 0, new byte[] { 35, 36 } } });
         var program = new FanProgram(platform, (severity, message) => { });
         Check(program.Run("Regression"), "program starts");
+        Check(forcedGpuRead, "program snapshots fresh GPU settings");
         Equal("mode:49:False|gpu:87|heartbeat|levels:35,36", string.Join("|", calls), "policy before fixed speed");
         Check(program.Run("Regression", true), "program switches without replacing original state");
         calls.Clear(); Check(program.Suspend(), "program suspends");
@@ -214,6 +240,136 @@ internal static class Regression {
         platform.Fans.MaintainControl();
         Equal(0, calls.Count, "failed termination cannot renew heartbeat");
         failMode = false;
+
+        program.Run("Regression");
+        Config.FanProgram["Empty"] = new FanProgramData("Empty", BiosData.FanMode.Default,
+            BiosData.GpuPowerLevel.Minimum, new SortedDictionary<byte,byte[]>());
+        Config.FanProgram["Malformed"] = new FanProgramData("Malformed", BiosData.FanMode.Default,
+            BiosData.GpuPowerLevel.Minimum, new SortedDictionary<byte,byte[]> {{0,new byte[] {35}}});
+        calls.Clear();
+        Check(!program.Run("Empty") && !program.Run("Malformed") && !program.Run(null), "invalid programs rejected");
+        Equal("Regression", program.GetName(), "rejected program preserves active program");
+        Check(program.IsEnabled && calls.Count == 0, "rejected program leaves hardware untouched");
+        program.Terminate();
+
+        Config.FanProgram["PositiveThreshold"] = new FanProgramData("PositiveThreshold", BiosData.FanMode.Default,
+            BiosData.GpuPowerLevel.Minimum, new SortedDictionary<byte,byte[]> {
+                {60,new byte[] {30,31}}, {80,new byte[] {40,41}}});
+        calls.Clear(); program.Run("PositiveThreshold");
+        Check(calls.Contains("levels:30,31"), "below first threshold uses first level");
+        temperature = 70; calls.Clear(); program.Update();
+        Check(calls.Contains("levels:30,31"), "between thresholds uses lower level");
+        temperature = 80; calls.Clear(); program.Update();
+        Check(calls.Contains("levels:40,41"), "exact upper threshold selects upper level");
+        program.Terminate(); temperature = 50;
+
+        program.Run("Regression"); calls.Clear(); failLevels = true;
+        Throws(() => program.Update(), "failed program target reported");
+        Check(!program.IsEnabled, "failed update stops program");
+        Check(calls.Contains("gpu:75"), "failed update restores original GPU state");
+        calls.Clear(); Check(!program.Update(), "failed update cannot retry target");
+        platform.Fans.MaintainControl();
+        Equal(0, calls.Count, "failed update cannot keep manual control alive");
+        failLevels = false;
+
+        foreach(int invalid in new[] {0, Config.MaxBelievableTemperature + 1}) {
+            program.Run("Regression"); temperature = invalid; calls.Clear();
+            Throws(() => program.Update(), "invalid temperature stops fan program");
+            Check(!program.IsEnabled && calls.Contains("max:True"), "invalid sensor requests cooling before handback");
+            Check(!calls.Any(c => c.StartsWith("levels:")), "invalid sensor cannot select low fan target");
+            calls.Clear(); platform.Fans.MaintainControl();
+            Equal(0, calls.Count, "sensor failure stops heartbeat renewal");
+            temperature = 50;
+        }
+        program.Run("Regression"); fresh = false; calls.Clear();
+        Throws(() => program.Update(), "stale cached temperature rejected");
+        Check(!program.IsEnabled && calls.Contains("max:True"), "stale sensor stops program with cooling");
+        fresh = true;
+        program.Run("Regression"); failMode = true; calls.Clear();
+        var operation = (GuiOp)FormatterServices.GetUninitializedObject(typeof(GuiOp));
+        typeof(GuiOp).GetField("Program", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(operation, program);
+        typeof(GuiOp).GetField("Platform", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(operation, platform);
+        using(var tray = (GuiTray)FormatterServices.GetUninitializedObject(typeof(GuiTray)))
+        using(var monitor = new System.Windows.Forms.Timer())
+        using(var heartbeat = new System.Windows.Forms.Timer()) {
+            var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            typeof(GuiTray).GetField("Op", flags).SetValue(tray, operation);
+            typeof(GuiTray).GetField("TrayUpdateTimer", flags).SetValue(tray, monitor);
+            typeof(GuiTray).GetField("HeartbeatTimer", flags).SetValue(tray, heartbeat);
+            monitor.Start(); heartbeat.Start();
+            bool exited = false;
+            tray.ThreadExit += (sender, args) => exited = true;
+            Exception failure = null;
+            try { tray.ExitThread(); } catch(Exception e) { failure = e; }
+            Check(failure is IOException && failure.Message == "simulated rejected mode", "GUI exit preserves hardware failure");
+            Check(!monitor.Enabled && !heartbeat.Enabled, "failed GUI exit stops both timers");
+            Check(exited && !program.IsEnabled, "failed GUI exit completes shutdown and stops program");
+            Check(calls.Contains("gpu:75"), "failed GUI exit still restores GPU state");
+        }
+        failMode = false;
+        Set(platform, "TemperatureUse", new[] {false});
+        Throws(() => program.Run("Regression"), "no enabled sensors rejected");
+        Check(!program.IsEnabled, "no-sensor start leaves program stopped");
+    }
+    static void ProgramTransactions() {
+        InstallBios(); Config.FanLevelNeedManual = false;
+        var platform = (Platform)FormatterServices.GetUninitializedObject(typeof(Platform));
+        Set(platform, "Fans", Fans(victus)); Set(platform, "System", FakeSettings());
+        Set(platform, "Profile", victus);
+        Set(platform, "TemperatureUse", new[] {true});
+        Set(platform, "Temperature", new IPlatformReadComponent[] {
+            new Proxy<IPlatformReadComponent>((name, args) => {
+                if(name == "Update") return true;
+                if(name == "GetValue") return 50;
+                throw new Exception("Unexpected transaction sensor call: " + name);
+            }).Value
+        });
+        Config.FanProgram["Transactions"] = new FanProgramData("Transactions", BiosData.FanMode.Performance,
+            BiosData.GpuPowerLevel.Maximum, new SortedDictionary<byte,byte[]> {{0,new byte[] {35,36}}});
+        using(var entered = new ManualResetEventSlim())
+        using(var release = new ManualResetEventSlim()) {
+            bool block = false;
+            Exception updateError = null, terminateError = null;
+            var program = new FanProgram(platform, (severity, message) => {
+                if(block && severity == FanProgram.Severity.Notice) {
+                    entered.Set();
+                    if(!release.Wait(10000)) throw new Exception("Update release timed out");
+                }
+            });
+            program.Run("Transactions"); calls.Clear(); block = true;
+            var update = new Thread(() => { try { program.Update(); } catch(Exception e) { updateError = e; } }) {IsBackground=true};
+            var terminate = new Thread(() => { try { program.Terminate(); } catch(Exception e) { terminateError = e; } }) {IsBackground=true};
+            try {
+                update.Start();
+                Check(entered.Wait(5000), "background update reached resolved target");
+                object controlLock = typeof(Hw).GetField("BiosControlLock", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
+                bool acquired = Monitor.TryEnter(controlLock);
+                if(acquired) Monitor.Exit(controlLock);
+                Check(!acquired, "program update holds shared control transaction lock");
+                terminate.Start();
+            } finally {
+                block = false; release.Set();
+                if((update.ThreadState & System.Threading.ThreadState.Unstarted) == 0) Check(update.Join(5000), "update worker exits");
+                if((terminate.ThreadState & System.Threading.ThreadState.Unstarted) == 0) Check(terminate.Join(5000), "termination worker exits");
+            }
+            Check(updateError == null && terminateError == null, "serialized update and termination succeed");
+            Check(!program.IsEnabled, "background update cannot revive terminated program");
+            Check(calls.FindLastIndex(c => c.StartsWith("levels:")) < calls.FindLastIndex(c => c == "mode:48:True"), "no target follows Auto restoration");
+            calls.Clear(); platform.Fans.MaintainControl();
+            Equal(0, calls.Count, "concurrent Auto cannot restart heartbeat renewal");
+        }
+        // A pending startup must not override a later explicit user choice.
+        var operation = (GuiOp)FormatterServices.GetUninitializedObject(typeof(GuiOp));
+        typeof(GuiOp).GetMethod("CancelAutoConfig", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(operation, null);
+        operation.AutoConfig(); // Other fields are unset: any hardware access fails.
+        Equal(0, calls.Count, "cancelled startup makes no hardware call");
+        Set(operation, "FullPower", true);
+        typeof(GuiOp).GetField("Platform", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(operation, platform);
+        typeof(GuiOp).GetField("Program", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(operation, new FanProgram(platform, (severity,message) => {}));
+        var context = (GuiTray)FormatterServices.GetUninitializedObject(typeof(GuiTray));
+        typeof(GuiOp).GetField("Context", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(operation, context);
+        operation.PowerChange();
+        Check(!operation.FullPower, "power-source cache updates while no program runs");
     }
     static void ControlHeartbeat() {
         InstallBios();
@@ -248,10 +404,19 @@ internal static class Regression {
             calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
             Equal("max:True|mode:48:True", string.Join("|", calls), "Auto restores cooling for either stopped fan");
         }
-        failLevels = true;
+        calls.Clear(); failLevels = true;
         Throws(() => fans.SetLevels(new byte[] {0,35}), "partial zero-target failure reported");
-        failLevels = false; calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
-        Equal("max:True|mode:48:True", string.Join("|", calls), "failed zero-target write retains cooling safeguard");
+        Equal("heartbeat|max:True|mode:48:True", string.Join("|", calls), "failed zero-target write immediately restores cooling");
+        failLevels = false; calls.Clear(); fans.MaintainControl();
+        Equal(0, calls.Count, "failed zero-target write cannot renew manual control");
+        fans.SetLevels(new byte[] {35,35}); failHeartbeat = true;
+        Throws(() => fans.SetLevels(new byte[] {40,40}), "failed heartbeat reported");
+        failHeartbeat = false; calls.Clear(); fans.MaintainControl();
+        Equal(0, calls.Count, "failed acquisition clears previous manual renewal");
+        fans.SetLevels(new byte[] {35,35}); failMax = true;
+        Throws(() => fans.SetMax(true), "failed Max reported");
+        failMax = false; calls.Clear(); fans.MaintainControl();
+        Equal(0, calls.Count, "failed Max clears previous manual renewal");
         fans.SetLevels(new byte[] {0,35}); fans.SetLevels(new byte[] {35,35});
         calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
         Equal("mode:48:True", string.Join("|", calls), "successful nonzero targets clear stopped-fan state");
@@ -318,11 +483,16 @@ internal static class Regression {
         var payloadMethod = typeof(BiosCtl).GetMethod("CreateColorTablePayload", BindingFlags.Static | BindingFlags.NonPublic);
         byte[] original = Enumerable.Repeat((byte)0x5A, 128).ToArray(); original[0] = 3;
         var table = new BiosData.ColorTable(new[] {0x112233,0x112233,0x112233,0x112233});
-        var payload = (byte[])payloadMethod.Invoke(null, new object[] {original, table});
+        var payload = (byte[])payloadMethod.Invoke(null, new object[] {original, table, BiosData.KbdType.Standard});
         Check(payload.Take(25).SequenceEqual(original.Take(25)) && payload.Skip(37).SequenceEqual(original.Skip(37)), "keyboard metadata preserved");
         Check(!payload.Skip(25).Take(12).SequenceEqual(original.Skip(25).Take(12)), "all color slots updated");
         Equal((byte)0x5A, original[25], "source buffer unmodified");
-        Throws(() => payloadMethod.Invoke(null, new object[] {new byte[4], table}), "truncated keyboard buffer rejected");
+        foreach(var type in new[] {BiosData.KbdType.OneZoneWithNumPad, BiosData.KbdType.OneZoneWithoutNumPad}) {
+            var single = (byte[])payloadMethod.Invoke(null, new object[] {original, table, type});
+            Check(single.Take(25).SequenceEqual(original.Take(25)) && single.Skip(28).SequenceEqual(original.Skip(28)), "single-zone write preserves other slots and metadata");
+            Check(single.Skip(25).Take(3).SequenceEqual(payload.Skip(25).Take(3)), "single-zone write changes first RGB slot");
+        }
+        Throws(() => payloadMethod.Invoke(null, new object[] {new byte[4], table, BiosData.KbdType.Standard}), "truncated keyboard buffer rejected");
     }
     static void EcReports() {
         var save = typeof(CliOp).GetMethod("SaveEcReport", BindingFlags.NonPublic | BindingFlags.Static);
@@ -361,12 +531,26 @@ internal static class Regression {
             Check(stdout.Result.Contains("OmenMon") && stdout.Result.Contains("-EcMon"), "readable redirected help");
             Equal("", stderr.Result, "no console-handle exception");
         }
+        info.FileName = Assembly.GetExecutingAssembly().Location;
+        info.Arguments = "--progress";
+        using(var process = Process.Start(info)) {
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            if(!process.WaitForExit(15000)) { process.Kill(); throw new Exception("Redirected progress hung"); }
+            Equal(0, process.ExitCode, "redirected fan-program progress exit");
+            Equal("", stderr.Result, "redirected progress has no invalid-handle error");
+        }
     }
     [STAThread]
     public static int Main(string[] args) {
         try {
             typeof(Cli).GetProperty("IsInitialized").GetSetMethod(true).Invoke(null, new object[] { true });
             Config.LocaleInit("Fallback");
+            if(args.Length == 1 && args[0] == "--progress") {
+                typeof(CliOp).GetMethod("PrintProgTick", BindingFlags.Static | BindingFlags.NonPublic)
+                    .Invoke(null, new object[] {1});
+                return 0;
+            }
             if(args.Length == 2 && args[0] == "--reload") {
                 Config.FilePath = args[1]; Config.Load(); Config.ResolveTemperatureSensors(victus);
                 Equal((byte)0xB2, Sensor("GPU").Register, "fresh GPU register");
@@ -374,7 +558,7 @@ internal static class Regression {
             }
             work = Path.Combine(Path.GetTempPath(), "OmenMonRegression-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(work); Config.FilePath = Path.Combine(work, "sensors.xml");
-            foreach(Action test in new Action[] { FanControl, ControlHeartbeat, ModeNames, Keyboard, GpuPower, SensorPersistence, FanPrograms, EcReports }) {
+            foreach(Action test in new Action[] { FanControl, ControlHeartbeat, ModeNames, Keyboard, GpuPower, SensorPersistence, FanPrograms, ProgramTransactions, EcReports }) {
                 test(); Console.WriteLine("PASS " + test.Method.Name);
             }
             RedirectedCli(Path.GetFullPath(args[0])); Console.WriteLine("PASS RedirectedCli");

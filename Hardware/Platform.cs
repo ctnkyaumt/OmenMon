@@ -165,6 +165,27 @@ namespace OmenMon.Hardware.Platform {
 #endregion
 
 #region Information Retrieval
+        // Fan programs require fresh readings from every enabled sensor.
+        // Display readings can remain cached when an individual read fails.
+        public byte GetFanProgramTemperature() {
+            int maximum = 0;
+            bool found = false;
+            for(int i = 0; i < this.Temperature.Length; i++) {
+                if(!this.TemperatureUse[i]) continue;
+                found = true;
+                if(!this.Temperature[i].Update())
+                    throw new InvalidOperationException("Fan program temperature read failed.");
+                int value = this.Temperature[i].GetValue();
+                if(value <= 0 || value > Config.MaxBelievableTemperature)
+                    throw new InvalidOperationException("Fan program temperature is unavailable.");
+                maximum = Math.Max(maximum, value);
+            }
+            if(!found)
+                throw new InvalidOperationException("Fan program has no enabled temperature sensors.");
+            this.LastMaxTemperature = (byte) maximum;
+            return this.LastMaxTemperature;
+        }
+
         // Obtains the maximum value from the platform temperature array
         public byte GetMaxTemperature(bool forceUpdate = false) {
 

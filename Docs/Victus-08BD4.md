@@ -121,6 +121,30 @@ restoration, even if WMI reports an error. GPU restoration is attempted after
 a fan restore failure. Switching programs, including AC/battery selection,
 preserves the mode and GPU settings from before the first program started.
 
+Program lifecycle changes and fan actions now share one control transaction
+lock. An in-flight background update must finish before Auto restores control;
+it cannot write another fixed target after termination and revive heartbeat
+renewal. Startup runs on the GUI thread and is cancelled by explicit fan choices
+or exit. Power/status updates are dispatched to the GUI thread, with a dispatch
+handle created even when AutoConfig is disabled. Power-source tracking is also
+refreshed while no program is running. Tray Auto clears the main window's
+constant-speed selection; explicit Off rechecks state after stopping a program.
+
+The 2026-10-01 audit also found that failed periodic updates could leave the
+program enabled. Any update failure now stops the program and attempts fan/GPU
+restoration. Programs require fresh, nonzero, plausible readings from every
+enabled temperature sensor; a missing or failed reading requests Max cooling
+before native handback instead of using an old or zero value for a low target.
+This safety path can inherit the battery handback delay described above.
+Empty/malformed curves are rejected without replacing an active program, and
+temperatures below the first curve threshold use its first level.
+GPU snapshots are refreshed when a program starts; even a failed GPU write
+invalidates cached readback. Failed Victus target/Max acquisition stops heartbeat
+renewal, and a failed zero-target write attempts cooling recovery immediately.
+GUI exit stops both timers before restoration and completes shutdown even if
+hardware calls fail. Redirected CLI fan-program progress avoids cursor calls;
+cancellation and exceptions restore settings and detach the cancellation handler.
+
 Victus ignores legacy XML options requesting raw EC fan control/manual toggles.
 Unknown manual/countdown registers are not accessed through these controls.
 Other profiles retain their original EC behavior. WMI failures in Victus fan
@@ -171,8 +195,9 @@ names resolve after product selection; custom and BIOS sensors survive saving.
 ## Keyboard
 
 The firmware reports ZoneCount 3 and four color slots even though this device
-has one physical zone. Product 8BD4 remains explicitly single-zone. All slots
-carry the same chosen color; color is written before enabling backlight.
+has one physical zone. Product 8BD4 remains explicitly single-zone. The live
+GC2B keyboard type is 4 (single zone with numpad); type 5 is the variant without
+a numpad. Color is written before enabling backlight.
 
 The firmware reports LC04 backlight status as 0x00 when off and 0xE4 (bit 7 set)
 when on. Bit 7 normalizes on/off state. Off still sends HP's 0x64 value, but the
@@ -188,8 +213,10 @@ clicks appeared to fix startup.
 Keyboard writes now acquire access on demand before changing color or backlight.
 The backlight setter waits 100 ms for readback and retries at most three times;
 failure is reported and the GUI reloads actual state. Blind double writes were
-removed. Color updates preserve the existing 128-byte buffer and replace only
-RGB bytes 25..36, as HP's client does. BIOS calls are serialized and WMI result
+removed. Color updates preserve the existing 128-byte buffer. For types 4/5,
+only the first RGB slot (bytes 25..27) is replaced, matching HP's single-zone
+client; other keyboard types retain four-slot writes (bytes 25..36).
+BIOS calls are serialized and WMI result
 objects remain alive until output data has been read.
 
 ## EC logging and automated checks
@@ -204,7 +231,8 @@ The GitHub build runs Tests/Regression.cs against the compiled application:
 fan protocol payload/order and failure behavior, heartbeat renewal/release,
 canonical dropdown labels, keyboard handshake/retries/metadata, legacy manual release, WMI
 RPM, GPU presets, fresh-process sensor reload, custom/legacy sensors, fan-program
-suspend/terminate restoration, partial/locked log files and redirected help.
+suspend/terminate/update failure restoration, missing/stale sensors, curve boundaries,
+failed GUI exit, partial/locked log files and redirected help/program progress.
 These tests use mocks and never open hardware interfaces.
 
 The workflow is manual/callable; pushing alone does not start it. Dispatch
@@ -228,3 +256,37 @@ OmenMon Build after pushing. No local build is required.
 
 Only one fan-control application should be actively changing settings during
 comparisons. The automated checks do not prove real-device timing or load behavior.
+
+## 2026-10-01 battery audit
+
+The installed September 27 executable matched CI SHA-256
+`50C193B4DBD1DA23EC621356E6791F86E002EB89EDA78AF98402C30EBCB7484C`.
+Deleting the download ZIPs did not remove installed fixes. The leftover September
+27 Max-target repeat ended abruptly at +162 seconds, still near 5800/6100 RPM;
+it contains no completion or recovery result. The first rewrite trial's +243-second
+idle recovery remains one observation, insufficient to ship a native release.
+
+A read-only snapshot on battery (100%) after the October 1 boot measured CPU
+40 C and fans 0/0 in three samples. Keyboard was off with the original Flamingo
+colors; GPU flags were 0/1/1 with an 87 C threshold. No OmenMon GUI, load helper,
+or running Ring0 driver was present. No new heartbeat, fan target, raw EC write,
+or stress load was issued during this snapshot. It verifies the present idle
+state, not Max-to-Auto recovery or native thermal response under load.
+
+The supplied Gaming Hub MSIX maps board 8BD4 to Bigred / PHX_N21X2X4X6.
+Its packaged power configuration (version 20240402) sets a 30-second heartbeat
+and omits `BiosAutoFanControlInDc`, whose default is false. Ordinary Auto on this
+configuration runs HP's software thermal curve and writes calculated fan
+targets; it does not provide an immediate native handback. HP's current online
+configuration is older (20230629) and also omits the native DC flag. The native
+branch used by some other models is therefore not applicable here. The user
+explicitly chose to retain native BIOS Auto only.
+
+The supplied 08BD4.bin is F.32; this machine still runs F.29. A repeat extraction
+found 78 checksum-valid ACPI tables. Relevant fan-control method bodies match
+the live F.29 table: GC27 has no off action, GC1A ignores the purported release
+byte, and GC12/GC2E set targets. GC35..37 are overclock controls. INIT and nearby
+fan fields are declarations without an ACPI release setter; speculative flat
+EC/MMIO writes are not a justified substitute. These references do not establish
+a safe immediate native battery release. The software race fix prevents this
+fork from undoing Auto; it does not prove firmware Max-to-Auto recovery.

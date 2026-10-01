@@ -237,6 +237,11 @@ namespace OmenMon.AppGui {
 
         // Handles the fan settings button being clicked
         private void EventActionFanSet(object sender, EventArgs e) {
+            lock(Hw.BiosControlLock) { ApplyFanSettings(sender, e); }
+        }
+
+        private void ApplyFanSettings(object sender, EventArgs e) {
+            Context.Op.CancelAutoConfig();
 
             // Query fan state
             bool isFanMax = Context.Op.Platform.Fans.GetMax();
@@ -279,7 +284,7 @@ namespace OmenMon.AppGui {
                 // Terminate any running fan program
                 Context.Op.Program.Terminate();
 
-                if(!isFanOff) { // Skip if already off
+                if(!Context.Op.Platform.Fans.GetOff()) { // Recheck after termination.
 
                     if(isFanMax) // Disable maximum speed first
                         Context.Op.Platform.Fans.SetMax(false);
@@ -312,7 +317,7 @@ namespace OmenMon.AppGui {
                     && this.TrkFan1Lvl.Value == this.TrkFan1Lvl.Minimum) {
 
                     // Switch the fans off
-                    if(!isFanOff) // If not already off
+                    if(!Context.Op.Platform.Fans.GetOff()) // Recheck after termination.
                         Context.Op.Platform.Fans.SetOff(true);
 
                 // Conversely, if the user wants maximum speed setting
@@ -750,6 +755,11 @@ namespace OmenMon.AppGui {
         }
 
         // Updates the fan group controls section
+        internal void ClearConstantFanSelection() {
+            this.TrkFan0Lvl.Enabled = false;
+            this.TrkFan1Lvl.Enabled = false;
+        }
+
         public void UpdateFanCtl() {
 
             // Query and retrieve fan control state

@@ -151,12 +151,17 @@ namespace OmenMon.Hardware.Platform {
                         throw new ArgumentException("Expected CPU and GPU fan levels.", nameof(levels));
                     // Use HP's WMI payload regardless of legacy XML flags.
                     // Report failures instead of claiming the target was accepted.
-                    Hw.BiosHeartbeat();
-                    // A rejected WMI call may still have applied one target.
                     bool stopsFan = levels[0] == 0 || levels[1] == 0;
-                    MayHaveStoppedFan |= stopsFan;
-                    Hw.Bios.SetFanLevel(levels);
-                    MayHaveStoppedFan = stopsFan;
+                    try {
+                        Hw.BiosHeartbeat();
+                        // A rejected WMI call may still have applied one target.
+                        MayHaveStoppedFan |= stopsFan;
+                        Hw.Bios.SetFanLevel(levels);
+                        MayHaveStoppedFan = stopsFan;
+                    } catch {
+                        ReleaseAfterFailure();
+                        throw;
+                    }
                     KeepBiosControl = true;
                     LastSetOff = levels[0] == 0 && levels[1] == 0;
                     LastSetMax = false;
@@ -224,14 +229,27 @@ namespace OmenMon.Hardware.Platform {
                     RestoreAutomatic(LastSetMode ?? BiosData.FanMode.Default);
                     return;
                 }
-                if(Profile.UsesBiosFanControl)
-                    Hw.BiosHeartbeat();
-                Hw.BiosSet(Hw.Bios.SetMaxFan, true);
+                try {
+                    if(Profile.UsesBiosFanControl)
+                        Hw.BiosHeartbeat();
+                    Hw.BiosSet(Hw.Bios.SetMaxFan, true);
+                } catch {
+                    if(Profile.UsesBiosFanControl)
+                        ReleaseAfterFailure();
+                    throw;
+                }
                 MayHaveStoppedFan = false;
                 KeepBiosControl = Profile.UsesBiosFanControl;
                 LastSetMax = true;
                 LastSetOff = false;
             }
+        }
+
+        private void ReleaseAfterFailure() {
+            KeepBiosControl = false;
+            // Attempt cooling recovery for partially applied zero targets.
+            // Keep the original write error even if restoration also fails.
+            try { RestoreAutomatic(LastSetMode ?? BiosData.FanMode.Default); } catch { }
         }
 
         // Retrieves the current fan mode

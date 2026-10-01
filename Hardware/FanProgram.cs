@@ -109,6 +109,10 @@ namespace OmenMon.Hardware.Platform {
         // Re-enable fan program
         // following a resume from suspend
         public bool Resume() {
+            lock(Hw.BiosControlLock) { return ResumeCore(); }
+        }
+
+        private bool ResumeCore() {
 
             // Fail if no program active
             // or if not suspended
@@ -128,6 +132,10 @@ namespace OmenMon.Hardware.Platform {
 
         // Starts a fan program given its name
         public bool Run(string name, bool isAlternate = false) {
+            lock(Hw.BiosControlLock) { return RunCore(name, isAlternate); }
+        }
+
+        private bool RunCore(string name, bool isAlternate) {
 
             // Note: no need to terminate
             // the previous program first, if any
@@ -147,7 +155,7 @@ namespace OmenMon.Hardware.Platform {
             // Keep the original state when switching programs (including AC/DC).
             if(!this.IsEnabled) {
                 this.LastFanMode = Platform.Fans.GetMode();
-                this.LastGpuPowerData = Platform.System.GetGpuPower();
+                this.LastGpuPowerData = Platform.System.GetGpuPower(true);
             }
             this.IsEnabled = true;
 
@@ -161,6 +169,10 @@ namespace OmenMon.Hardware.Platform {
 
         // Suspend the running fan program
         public bool Suspend() {
+            lock(Hw.BiosControlLock) { return SuspendCore(); }
+        }
+
+        private bool SuspendCore() {
 
             // Fail if no program active
             // or if already suspended
@@ -185,6 +197,10 @@ namespace OmenMon.Hardware.Platform {
 
         // Terminates the running fan program, if any is running
         public bool Terminate() {
+            lock(Hw.BiosControlLock) { return TerminateCore(); }
+        }
+
+        private bool TerminateCore() {
 
             // Fail if no program active
             if(!this.IsEnabled)
@@ -216,16 +232,41 @@ namespace OmenMon.Hardware.Platform {
 
         // Updates the fan program, if any is running
         public bool Update() {
+            lock(Hw.BiosControlLock) { return UpdateLocked(); }
+        }
+
+        private bool UpdateLocked() {
 
             // Fail if no program active
             // or program is suspended
             if(!this.IsEnabled || this.IsSuspended)
                 return false;
 
+            try {
+                return UpdateCore();
+            } catch {
+                // A failed update must not keep retrying fixed targets or
+                // renewing control. Preserve the original error for the caller.
+                try { Terminate(); } catch { }
+                throw;
+            }
+
+        }
+
+        private bool UpdateCore() {
+
             // Find out the current maximum temperature,
             // the temperature level for the given temperature,
             // and the target fan levels for the given level
-            byte temperature = Platform.GetMaxTemperature(true);
+            byte temperature;
+            try {
+                temperature = Platform.GetFanProgramTemperature();
+            } catch {
+                // Without valid temperatures, do not leave a low fixed target.
+                // Terminate() below will stop renewal and request native Auto.
+                try { Platform.Fans.SetMax(true); } catch { }
+                throw;
+            }
             byte level = GetTemperatureLevel(temperature);
             byte[] fans = GetFanLevel(level);
 
@@ -283,7 +324,7 @@ namespace OmenMon.Hardware.Platform {
             else
 
                 // Return the item at the binary complement index less one
-                return this.Levels[~value - 1];
+                return this.Levels[Math.Max(0, ~value - 1)];
 
         }
 
@@ -322,8 +363,15 @@ namespace OmenMon.Hardware.Platform {
         private bool Setup(string name) {
 
             // Bail out if referring to a non-existent program
-            if(!Config.FanProgram.ContainsKey(name))
+            if(name == null || !Config.FanProgram.ContainsKey(name))
                 return false;
+
+            var program = Config.FanProgram[name];
+            if(program == null || program.Level == null || program.Level.Count == 0)
+                return false;
+            foreach(byte[] level in program.Level.Values)
+                if(level == null || level.Length != PlatformData.FanCount)
+                    return false;
 
             // Set up the program name
             this.Name = name;

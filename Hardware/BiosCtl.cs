@@ -161,18 +161,20 @@ namespace OmenMon.Hardware.Bios {
         public void SetColorTable(ColorTable data) {
             byte[] current;
             Check(Send(Cmd.Keyboard, 0x02, new byte[4], 128, out current), true);
-            Check(Send(Cmd.Keyboard, 0x03, CreateColorTablePayload(current, data)), true);
+            Check(Send(Cmd.Keyboard, 0x03, CreateColorTablePayload(current, data, GetKbdType())), true);
         }
 
-        internal static byte[] CreateColorTablePayload(byte[] current, ColorTable data) {
+        internal static byte[] CreateColorTablePayload(byte[] current, ColorTable data, KbdType keyboardType) {
             if(current == null || current.Length != 128 || current[0] != 3 ||
                 data.ZoneCount != 3 || data.Zone == null || data.Zone.Length != 4)
                 throw new ArgumentException("Expected a four-slot keyboard color table.");
-            // HP reads the original buffer and changes only RGB bytes 25..36.
+            // HP changes only the physical zones: one RGB triplet for types 4/5.
             // Preserve firmware metadata instead of sending zero-filled padding.
             byte[] payload = (byte[])current.Clone();
             byte[] colors = Conv.GetByteArray(data);
-            Array.Copy(colors, 25, payload, 25, 12);
+            bool singleZone = keyboardType == KbdType.OneZoneWithNumPad
+                || keyboardType == KbdType.OneZoneWithoutNumPad;
+            Array.Copy(colors, 25, payload, 25, singleZone ? 3 : 12);
             return payload;
         }
 #endregion

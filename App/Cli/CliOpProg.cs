@@ -65,50 +65,47 @@ namespace OmenMon.AppCli {
             // Initialize the fan program with the hardware platform
             FanProgram Program = new FanProgram(new Platform(), Cli.PrintProgMessage);
 
-            // Create an event handler to break out of the perpetual loop
-            Console.CancelKeyPress += (sender, eventArgs) => {
+            // The loop owns hardware cleanup; cancellation only requests it.
+            ConsoleCancelEventHandler cancel = (sender, eventArgs) => {
+                eventArgs.Cancel = true;
                 IsStop = true;
-
-                // Terminate the program
-                Program.Terminate();
-
-                // Restore the console color to the original
-                Console.ForegroundColor = originalColor;
-
-                // Exit the application
-                App.Exit();
-
             };
+            IsStop = false;
+            Console.CancelKeyPress += cancel;
 
-            // Start the program
-            Program.Run(program);
-
-            // Run in a perpetual loop
-            int Tick;
-            while(!IsStop) {
-
-                // Reset the tick counter
-                Tick = -1;
-
-                // Wait until the next iteration
-                while(!IsStop && ++Tick < Config.UpdateProgramInterval) {
-
-                    // Print the tick counter
-                    Cli.PrintColor((ConsoleColor) Cli.Color.Deemphasis, "# ");
-                    Cli.PrintColor((ConsoleColor) Cli.Color.Emphasis, Conv.GetString((uint) Tick, 2, 10));
-                    Cli.PrintColor((ConsoleColor) Cli.Color.Deemphasis, " / " + Conv.GetString((uint) Config.UpdateProgramInterval, 2, 10));
-                    Console.SetCursorPosition(0, Console.CursorTop);
-
-                    // Sleep for each tick
-                    Thread.Sleep(Config.GuiTimerInterval);
-
+            try {
+                if(!Program.Run(program)) {
+                    App.Error("ErrProgName");
+                    return;
                 }
-
-                // Update the program
-                Program.Update();
-
+                while(!IsStop) {
+                    int tick = -1;
+                    while(!IsStop && ++tick < Config.UpdateProgramInterval) {
+                        PrintProgTick(tick);
+                        Thread.Sleep(Config.GuiTimerInterval);
+                    }
+                    if(!IsStop)
+                        Program.Update();
+                }
+            } finally {
+                Console.CancelKeyPress -= cancel;
+                try {
+                    Program.Terminate();
+                } finally {
+                    try { Console.ForegroundColor = originalColor; } catch { }
+                }
             }
 
+        }
+
+        internal static void PrintProgTick(int tick) {
+            if(Console.IsOutputRedirected) return;
+            try {
+                Cli.PrintColor((ConsoleColor) Cli.Color.Deemphasis, "# ");
+                Cli.PrintColor((ConsoleColor) Cli.Color.Emphasis, Conv.GetString((uint) tick, 2, 10));
+                Cli.PrintColor((ConsoleColor) Cli.Color.Deemphasis, " / " + Conv.GetString((uint) Config.UpdateProgramInterval, 2, 10));
+                Console.SetCursorPosition(0, Console.CursorTop);
+            } catch(System.IO.IOException) { }
         }
 #endregion
 

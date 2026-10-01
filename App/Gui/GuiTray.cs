@@ -70,6 +70,9 @@ namespace OmenMon.AppGui {
                 Text = Config.AppName + " " + Config.AppVersion,
                 Visible = true
             };
+            // Dispatch power/startup/status work to this UI thread even when
+            // AutoConfig is disabled and the menu has never been opened.
+            _ = this.Notification.ContextMenuStrip.Handle;
 
             // Initialize the operation-running class
             this.Op = new GuiOp(Context);
@@ -140,6 +143,11 @@ namespace OmenMon.AppGui {
         // Handles exit tasks
         protected override void ExitThreadCore() {
 
+            // Stop both timers before any restoration that can throw.
+            this.TrayUpdateTimer.Stop();
+            this.HeartbeatTimer.Stop();
+            this.Op.CancelAutoConfig();
+
             // The icon has to be removed beforehand,
             // otherwise it will linger in the tray
             if(this.Notification != null)
@@ -155,17 +163,18 @@ namespace OmenMon.AppGui {
             // Stop receiving power event notifications
             Gui.UnregisterSuspendResumeNotification();
 
-            // Terminate the fan program, if any
-            if(this.Op.Program.IsEnabled)
+            try {
+                // Terminate the fan program, if any.
                 this.Op.Program.Terminate();
-
-            if(this.Op.Platform.Profile.UsesBiosFanControl) {
-                this.HeartbeatTimer.Stop();
-                this.Op.Platform.Fans.RestoreAutomatic(this.Op.Platform.Fans.GetMode());
+            } finally {
+                try {
+                    if(this.Op.Platform.Profile.UsesBiosFanControl)
+                        this.Op.Platform.Fans.RestoreAutomatic(this.Op.Platform.Fans.GetMode());
+                } finally {
+                    // Complete shutdown even if either hardware restore failed.
+                    base.ExitThreadCore();
+                }
             }
-
-            // Perform the usual tasks
-            base.ExitThreadCore();
 
         }
 #endregion
@@ -187,7 +196,9 @@ namespace OmenMon.AppGui {
             // Only respond to status change events,
             // which excludes Resume and Suspend
             if(e.Mode == PowerModes.StatusChange)
-                this.Op.PowerChange();
+                try {
+                    this.Notification.ContextMenuStrip.BeginInvoke(new Action(this.Op.PowerChange));
+                } catch(InvalidOperationException) { }
 
         }
 

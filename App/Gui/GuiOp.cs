@@ -5,7 +5,6 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Threading;
 using System.Windows.Forms;
 using OmenMon.External;
 using OmenMon.Hardware.Bios;
@@ -29,6 +28,7 @@ namespace OmenMon.AppGui {
 
         // Flag to indicate if running on full power
         public bool FullPower { get; private set; }
+        private bool AutoConfigCancelled;
 
         // Constructs the operation-running class
         public GuiOp(GuiTray context) {
@@ -58,6 +58,11 @@ namespace OmenMon.AppGui {
 
         // Automatically applies the configuration on startup
         public void AutoConfig() {
+            lock(Hw.BiosControlLock) { AutoConfigCore(); }
+        }
+
+        private void AutoConfigCore() {
+            if(this.AutoConfigCancelled) return;
 
             // Set whether the application should start automatically with Windows
             Hw.TaskSet(Config.TaskId.Gui, Config.AutoStartup);
@@ -67,6 +72,8 @@ namespace OmenMon.AppGui {
                 new BiosData.GpuPowerData(
                     (BiosData.GpuPowerLevel)
                         Enum.Parse(typeof(BiosData.GpuPowerLevel), Config.GpuPowerDefault)));
+
+            this.FullPower = this.Platform.System.IsFullPower();
 
             // Apply the default fan program,
             // or the alternative program if no AC
@@ -81,18 +88,25 @@ namespace OmenMon.AppGui {
 
         }
 
-        // Starts the automatic configuration in another thread
-        // so as not to increase the application loading time
+        // Queue startup on the UI thread; fan callbacks also update controls.
         public void AutoConfigRun() {
+            var menu = Context.Notification.ContextMenuStrip;
+            _ = menu.Handle;
+            menu.BeginInvoke(new Action(this.AutoConfig));
+        }
 
-            Thread autoConfig = new Thread(this.AutoConfig);
-            autoConfig.IsBackground = true;
-            autoConfig.Start();
-
+        internal void CancelAutoConfig() {
+            lock(Hw.BiosControlLock) { this.AutoConfigCancelled = true; }
         }
 
         // Keeps updating the status as the fan program runs in the background
         public void FanProgramCallback(FanProgram.Severity severity, string message) {
+            var menu = Context.Notification.ContextMenuStrip;
+            if(menu.InvokeRequired) {
+                try { menu.BeginInvoke(new Action(() => FanProgramCallback(severity, message))); }
+                catch(InvalidOperationException) { }
+                return;
+            }
 
             // For important status updates only,
             // show a balloon tray notification
@@ -135,6 +149,7 @@ namespace OmenMon.AppGui {
             // If Omen key is set
             // to toggle fan program 
             if(Config.KeyToggleFanProgram) {
+                CancelAutoConfig();
 
                 // Show the form on first press
                 // if configured to do so and not already shown
@@ -216,14 +231,18 @@ namespace OmenMon.AppGui {
 
         // Responds to power-mode status change events
         public void PowerChange() {
+            lock(Hw.BiosControlLock) { PowerChangeCore(); }
+        }
+
+        private void PowerChangeCore() {
+            bool fullPower = this.Platform.System.IsFullPower();
+            bool changed = this.FullPower != fullPower;
+            this.FullPower = fullPower;
 
             // Only if a fan program is active, if configured to do so,
             // and if the power state actually changed from the last-recorded
             if(Config.AutoConfig && this.Program.IsEnabled
-                && this.FullPower != this.Platform.System.IsFullPower()) {
-
-                // Toggle the power state
-                this.FullPower = !this.FullPower;
+                && changed) {
 
                 // Apply the default fan program,
                 // or the alternative program if no AC
@@ -242,6 +261,7 @@ namespace OmenMon.AppGui {
 
         // Responds to the system entering and resuming from low-power state events
         public uint SuspendResumeCallback(IntPtr context, uint type, IntPtr setting) {
+            try {
 
             // System is resuming from suspend
             if(type == PowrProf.PBT_APMRESUMEAUTOMATIC)
@@ -255,6 +275,13 @@ namespace OmenMon.AppGui {
 
                 // Suspend the fan program
                 this.Program.Suspend();
+            } catch(Exception e) {
+                // Never let a managed BIOS failure escape an unmanaged callback.
+                try {
+                    Context.Notification.ContextMenuStrip.BeginInvoke(new Action(
+                        () => App.Error("ErrUnexpected|EXCEPTION", e)));
+                } catch { }
+            }
 
             return 0;
 
