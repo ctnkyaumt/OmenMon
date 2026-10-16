@@ -37,6 +37,7 @@ namespace OmenMon.Hardware.Platform {
         public BiosData.FanMode GetMode();
         public void SetMode(BiosData.FanMode mode);
         public void RestoreAutomatic(BiosData.FanMode mode);
+        public void RestoreAutomatic(BiosData.FanMode mode, bool keepCooling);
         public void MaintainControl();
 
         // Retrieves the fan off switch status
@@ -53,6 +54,10 @@ namespace OmenMon.Hardware.Platform {
     public class FanArray : IFanArray {
         private bool KeepBiosControl;
         private bool MayHaveStoppedFan;
+
+        // Set once OEM control was acquired with a fixed, Max or Off state;
+        // cleared once that state has been handed back to the firmware
+        private bool HoldsBiosControl;
 
         // Fan array
         public IFan[] Fan { get; private set; }
@@ -154,6 +159,7 @@ namespace OmenMon.Hardware.Platform {
                     bool stopsFan = levels[0] == 0 || levels[1] == 0;
                     try {
                         Hw.BiosHeartbeat();
+                        HoldsBiosControl = true;
                         // A rejected WMI call may still have applied one target.
                         MayHaveStoppedFan |= stopsFan;
                         Hw.Bios.SetFanLevel(levels);
@@ -230,8 +236,10 @@ namespace OmenMon.Hardware.Platform {
                     return;
                 }
                 try {
-                    if(Profile.UsesBiosFanControl)
+                    if(Profile.UsesBiosFanControl) {
                         Hw.BiosHeartbeat();
+                        HoldsBiosControl = true;
+                    }
                     Hw.BiosSet(Hw.Bios.SetMaxFan, true);
                 } catch {
                     if(Profile.UsesBiosFanControl)
@@ -281,17 +289,36 @@ namespace OmenMon.Hardware.Platform {
         // Restores firmware-controlled fan behavior after Max, Off, a fixed
         // level, or a fan program.
         public void RestoreAutomatic(BiosData.FanMode mode) {
+            RestoreAutomatic(mode, false);
+        }
+
+        // With keepCooling, an active Max is left in place instead of being
+        // replaced by the handback target; used after a safety fallback
+        public void RestoreAutomatic(BiosData.FanMode mode, bool keepCooling) {
             lock(Hw.BiosControlLock) {
                 if(Profile.UsesBiosFanControl) {
                     // GC10 is an OEM-control heartbeat, despite its "fan count" name.
                     // Stop renewing it: the EC returns to its native thermal policy
-                    // after its AC/DC watchdog expires. GC1A/GC27 alone do not release targets.
+                    // after its AC/DC watchdog expires. On battery the firmware may only
+                    // take over after a thermal or power event, so fans could stay at
+                    // the last target for long. Like HP Gaming Hub, first move to a
+                    // moderate fixed target, then request BIOS fan control.
+                    // Renewal stops even if a write below fails.
+                    bool held = HoldsBiosControl || KeepBiosControl || MayHaveStoppedFan
+                        || LastSetMax || LastSetOff;
                     KeepBiosControl = false;
-                    if(MayHaveStoppedFan) {
-                        // Either fan may be off, including asymmetric targets.
-                        // Do not wait for the watchdog with cooling disabled.
-                        Hw.Bios.SetMaxFan(true);
-                        MayHaveStoppedFan = false;
+                    // Nothing to hand back if OmenMon never took control
+                    // or already did so: only the mode is sent then
+                    if(held) {
+                        // Keep only an actual Max; any other state still gets the
+                        // handback target, so a possibly stopped fan is restarted
+                        if(!(keepCooling && LastSetMax)) {
+                            // Also restores cooling for any fan that may be stopped,
+                            // including asymmetric targets
+                            Hw.BiosHeartbeat();
+                            Hw.Bios.SetFanLevel(Profile.HandbackFanLevels);
+                        }
+                        HoldsBiosControl = MayHaveStoppedFan = false;
                     }
                     SetModeInternal(mode, true);
                     LastSetOff = LastSetMax = false;

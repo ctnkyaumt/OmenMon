@@ -64,6 +64,14 @@ namespace OmenMon.Hardware.Platform {
             get { return KeyboardZoneCount == 1; }
         }
 
+        // CPU and GPU fan targets written when handing fan control back to the
+        // firmware, or null if the profile does not use such a handback
+        // Each call returns a copy, so that callers cannot alter the profile
+        private readonly byte[] handbackFanLevels;
+        public byte[] HandbackFanLevels {
+            get { return handbackFanLevels == null ? null : (byte[]) handbackFanLevels.Clone(); }
+        }
+
         private PlatformProfile(
             string name,
             int keyboardZoneCount,
@@ -73,6 +81,10 @@ namespace OmenMon.Hardware.Platform {
 
             Name = name;
             UsesBiosFanControl = name == "HP Victus 8BD4";
+            // Lowest running step of the live GC2F fan table on BIOS F.29
+            // (also the native idle level on AC). HP Gaming Hub hands fan
+            // control back to the BIOS from a moderate fixed target
+            handbackFanLevels = UsesBiosFanControl ? new byte[] { 23, 26 } : null;
             KeyboardZoneCount = keyboardZoneCount;
             FanModeNames = fanModeNames;
             Ec = ec;

@@ -57,12 +57,15 @@ from 0/0 to 40/43, followed by cooling down to 23/0 and 23/26. Values are 100 RP
 
 OmenMon now sends the heartbeat when acquiring fixed/Max/Off/program control,
 renews it only while that control is active, and stops renewal for Auto and exit.
-Auto applies the requested firmware mode without writing a fixed fan target.
-Off -> Auto first raises cooling to Max while waiting for the session to expire.
-This also covers a single stopped fan in an asymmetric manual target, and a
-failed zero-target write that may have partially applied. Invalid target arrays
-are rejected before acquiring OEM control.
-The displayed countdown estimates 120 seconds on AC or 600 seconds on battery
+Since 2026-10-16, leaving control for Auto uses an HP-style handback (see the
+2026-10-16 section): one heartbeat, the firmware's lowest running step 23/26
+(2300/2600 RPM), then the requested mode with the BIOS-control flag, and no
+further renewal. Auto never writes a target when OmenMon did not hold control.
+The handback target also replaces the earlier Max-before-Auto cooling step for
+Off, a single stopped fan in an asymmetric manual target, and a failed
+zero-target write. A fan program stopped by a sensor failure keeps Max instead.
+Invalid target arrays are rejected before acquiring OEM control.
+The displayed countdown estimates 120 seconds on AC or 240 seconds on battery
 since the last successful local heartbeat. The power source is captured at that
 heartbeat. This is not an EC register or proof of firmware state. Keyboard
 writes also require GC10 and restart that wait.
@@ -241,10 +244,11 @@ OmenMon Build after pushing. No local build is required.
 ## Laptop checks for the new artifact
 
 1. At idle, Max -> Auto/Default, then Max -> Auto/Performance -> Default.
-   On AC allow about 120 seconds. On battery, the 2026-09-23 Max trial stayed
-   latched beyond 16 minutes, so further observation is needed before calling
-   this path verified. Check response under load after RPM returns to native
-   idle. Max readback or an expired UI countdown alone does not prove Auto.
+   Fans should fall to about 2300/2600 RPM within about 10 seconds; the
+   firmware's own curve resumes after its watchdog (about 120 seconds on AC;
+   on battery it can wait for a thermal or power event). Check response under
+   load after RPM returns to native idle. Max readback or an expired UI
+   countdown alone does not prove Auto.
 2. Constant -> Auto and Fan Program -> Auto, both from the main window and tray.
    Confirm fixed targets remain steady across GUI refreshes.
 3. Save settings, restart, and confirm CPU/GPU sensor addresses/readings persist.
@@ -290,3 +294,49 @@ fan fields are declarations without an ACPI release setter; speculative flat
 EC/MMIO writes are not a justified substitute. These references do not establish
 a safe immediate native battery release. The software race fix prevents this
 fork from undoing Auto; it does not prove firmware Max-to-Auto recovery.
+
+## 2026-10-16 battery handback trials and HP-style handback
+
+Battery trials on BIOS F.29 used one heartbeat plus a target, Auto/Default
+after about 20 seconds, then WMI fan and board-temperature reads only. An ETW
+trace of WMI method calls showed no other process calling the HP BIOS
+interface during any trial.
+
+| Start | Writes before Auto | Result after the heartbeat |
+| --- | --- | --- |
+| native 0/0, board 47 C, cooling | GC10, GC2E 35/35 | native 0/0 at 243 s |
+| native 0/0 | GC10, GC27 Max | still Max at 334 s |
+| Max | GC10, GC2E 58/58 | still 58/58 at 707 s |
+| native 0/0 | GC10, GC2E 58/61 | still 58/61 at 627 s |
+| 58/61 | GC10, GC2E 23/23 | 23/23 within 10 s; still 23/23 at 480 s |
+
+Both observed 243-second releases (also 2026-09-27) happened while
+temperatures were still falling; every case that stayed at its target sat at
+a flat board temperature near 30 C. A fan-mode change and an identical GPU
+power rewrite after the watchdog did not release it. Plugging in AC returned a
+stuck Max to native 0/0 within 14 seconds. On battery the firmware therefore
+appears to need a thermal or power event after its watchdog; this is an
+inference from these trials, not a documented rule.
+
+The live ACPI tables were dumped with ACPICA acpidump and disassembled. Every HP
+fan method uses the EC mailbox ERCD at ECMM 0xD82..0xD8E with packets
+[0x45, 0xA0, sub, value]: 0x00 handshake (GC10; NVIDIA NPCF sends it too),
+0x02 status, 0x04 GPU power, 0x10..0x12 CPU power, 0x20/0x21 fan reads and
+0x22/0x23 fan targets. GC27(1) writes the last CF60/GF60 (or CF80/GF80) table
+row through the same 0x22/0x23 packets as GC2E, so Max and a 58/61 target are
+identical to the EC. The AC event (_Q37) only notifies the adapter, battery,
+HP WMI and NPCF devices; it never writes fan control. No ACPI method releases
+OEM fan control, so the AC release is internal to the EC firmware.
+
+HP Gaming Hub's native-battery branch (IsNBBiosFanControl: battery, thermal
+mode 1, BiosAutoFanControlInDc) calls SetSwFanControlLevelManualSlider(50),
+then SetFanMode(mode, fanControlByBios=true), and stops its software loop. On
+this model slider 50 computes CPU 40 / GPU 43 (MinRpm 23 from the PHX
+boundary list, MaxRpm 58). Gaming Hub has no immediate-release command; 0x31
+is SetIdleCommandOnOff.
+
+OmenMon now follows that pattern with the lowest running step of the live GC2F
+table, 23/26 (2300/2600 RPM, also native idle on AC), when leaving any control
+it holds. The fans become quiet within seconds and the firmware curve resumes
+whenever the EC hands back. Under heavy load this target holds until that
+handback; CPU and GPU firmware limits still apply.

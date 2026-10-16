@@ -946,10 +946,13 @@ namespace OmenMon.AppGui {
                 string presetName = item.Name.Remove(0, P_KBD_COLOR_PRESET.Length);
  
                 // Compare each to the current colors
+                // Single-zone keyboards only use the first zone,
+                // the others are firmware filler
                 if(colorNow.Zone[0].Value == Config.ColorPreset[presetName].Zone[0].Value
-                    && colorNow.Zone[1].Value == Config.ColorPreset[presetName].Zone[1].Value
-                    && colorNow.Zone[2].Value == Config.ColorPreset[presetName].Zone[2].Value
-                    && colorNow.Zone[3].Value == Config.ColorPreset[presetName].Zone[3].Value)
+                    && (Context.Op.Platform.Profile.IsSingleZoneKeyboard
+                    || (colorNow.Zone[1].Value == Config.ColorPreset[presetName].Zone[1].Value
+                        && colorNow.Zone[2].Value == Config.ColorPreset[presetName].Zone[2].Value
+                        && colorNow.Zone[3].Value == Config.ColorPreset[presetName].Zone[3].Value)))
 
                     // Mark as checked if the color values are the same
                     ((ToolStripMenuItem) item).Checked = true;

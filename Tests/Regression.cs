@@ -50,6 +50,8 @@ internal static class Regression {
     static readonly PlatformProfile victus = PlatformProfile.ForProduct("8bd4");
     static readonly List<string> calls = new List<string>();
     static bool failMode, failLevels, failMax, failHeartbeat, forcedGpuRead;
+    // Fails only the SetFanLevel call with exactly this payload (e.g. "0,35"), if set
+    static string failLevelTarget;
     static ISettings FakeSettings() {
         return new Proxy<ISettings>((name, args) => {
             if(name == "IsFullPower") return false;
@@ -66,6 +68,7 @@ internal static class Regression {
     }
     static void InstallBios() {
         failMode = failLevels = failMax = failHeartbeat = forcedGpuRead = false;
+        failLevelTarget = null;
         typeof(Hw).GetField("LastBiosHeartbeat", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, 0L);
         calls.Clear();
         Hw.Bios = new Proxy<IBiosCtl>((name, args) => {
@@ -74,8 +77,9 @@ internal static class Regression {
                 calls.Add("heartbeat"); return (byte)2;
             }
             if(name == "SetFanLevel") {
-                if(failLevels) throw new IOException("simulated rejected level");
-                calls.Add("levels:" + string.Join(",", (byte[])args[0]));
+                string target = string.Join(",", (byte[])args[0]);
+                if(failLevels || target == failLevelTarget) throw new IOException("simulated rejected level");
+                calls.Add("levels:" + target);
                 return null;
             }
             if(name == "SetFanMode") {
@@ -98,6 +102,10 @@ internal static class Regression {
         InstallBios();
         Config.FanLevelUseEc = Config.FanLevelNeedManual = true;
         var fans = Fans(victus);
+        Equal("23,26", string.Join(",", PlatformProfile.ForProduct("8BD4").HandbackFanLevels), "Victus handback fan targets");
+        Check(PlatformProfile.ForProduct("8A14").HandbackFanLevels == null, "legacy profile has no handback fan targets");
+        var handbackLevels = victus.HandbackFanLevels; handbackLevels[0] = 1; handbackLevels[1] = 2;
+        Equal("23,26", string.Join(",", victus.HandbackFanLevels), "mutating returned handback targets cannot change the profile");
         Equal("Default,Performance", string.Join(",", victus.FanModeNames), "supported modes");
         Equal(0, fans.GetCountdown(), "no unverified countdown read");
         Check(!fans.GetManual(), "no unverified manual read");
@@ -110,20 +118,21 @@ internal static class Regression {
         Equal("heartbeat|levels:35,36", string.Join("|", calls), "Victus ignores legacy EC flag");
         calls.Clear();
         fans.RestoreAutomatic(BiosData.FanMode.Default);
-        Equal("mode:48:True", string.Join("|", calls), "release before Auto");
+        Equal("heartbeat|levels:23,26|mode:48:True", string.Join("|", calls), "Auto after a fixed target hands back through the moderate target");
         calls.Clear(); fans.SetMax(false);
-        Equal("mode:48:True", string.Join("|", calls), "Max off restores Auto");
+        Equal("mode:48:True", string.Join("|", calls), "Max off without prior control only sends the mode");
         calls.Clear(); fans.SetMax(true);
         Equal("heartbeat|max:True", string.Join("|", calls), "Max on sets WMI MaxFan");
         Check(fans.GetMax(), "Victus Max cached true");
         calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
+        Equal("heartbeat|levels:23,26|mode:48:True", string.Join("|", calls), "Auto after Max hands back through the moderate target");
         Check(!fans.GetMax(), "Victus Max cached false after Auto");
         failMode = true;
         Throws(() => fans.SetMode(BiosData.FanMode.Performance), "failed mode propagates");
         Equal(BiosData.FanMode.Default, fans.GetMode(), "failed mode does not update cache");
         failMode = false; failLevels = true; calls.Clear();
         fans.RestoreAutomatic(BiosData.FanMode.Performance);
-        Equal("mode:49:True", calls.Single(), "Auto never attempts a fixed target write");
+        Equal("mode:49:True", calls.Single(), "second Auto after handback never writes a fixed target");
         failLevels = false;
         failLevels = true;
         Throws(() => fans.SetLevels(new byte[] { 35, 35 }), "failed level propagates");
@@ -228,13 +237,13 @@ internal static class Regression {
         Equal("mode:49:False|gpu:87|heartbeat|levels:35,36", string.Join("|", calls), "policy before fixed speed");
         Check(program.Run("Regression", true), "program switches without replacing original state");
         calls.Clear(); Check(program.Suspend(), "program suspends");
-        Equal("mode:48:True|gpu:75", string.Join("|", calls), "suspend restores exact state");
+        Equal("heartbeat|levels:23,26|mode:48:True|gpu:75", string.Join("|", calls), "suspend hands back and restores exact state");
         program.Resume(); calls.Clear(); Check(program.Terminate(), "program terminates");
-        Equal("mode:48:True|gpu:75", string.Join("|", calls), "terminate restores Auto");
+        Equal("heartbeat|levels:23,26|mode:48:True|gpu:75", string.Join("|", calls), "terminate hands back and restores Auto");
         program.Run("Regression"); failMode = true; calls.Clear();
         Throws(() => program.Terminate(), "failed Auto restoration is reported");
         Check(!program.IsEnabled && !program.IsSuspended && !program.IsAlternate, "failed termination stops program");
-        Equal("gpu:75", string.Join("|", calls), "GPU restoration attempted after fan failure");
+        Equal("heartbeat|levels:23,26|gpu:75", string.Join("|", calls), "GPU restoration attempted after fan failure");
         calls.Clear();
         Check(!program.Update(), "failed termination cannot reapply targets");
         platform.Fans.MaintainControl();
@@ -277,13 +286,16 @@ internal static class Regression {
             Throws(() => program.Update(), "invalid temperature stops fan program");
             Check(!program.IsEnabled && calls.Contains("max:True"), "invalid sensor requests cooling before handback");
             Check(!calls.Any(c => c.StartsWith("levels:")), "invalid sensor cannot select low fan target");
+            Equal("heartbeat|max:True", string.Join("|", calls.Take(2)), "invalid sensor acquires control, then requests Max");
+            Check(!calls.Skip(2).Any(c => c == "heartbeat" || c.StartsWith("levels:") || c.StartsWith("max:")),
+                "sensor-failure termination keeps Max: no handback target after it");
             calls.Clear(); platform.Fans.MaintainControl();
             Equal(0, calls.Count, "sensor failure stops heartbeat renewal");
             temperature = 50;
         }
         program.Run("Regression"); fresh = false; calls.Clear();
         Throws(() => program.Update(), "stale cached temperature rejected");
-        Check(!program.IsEnabled && calls.Contains("max:True"), "stale sensor stops program with cooling");
+        Check(!program.IsEnabled && calls.Contains("max:True") && !calls.Contains("levels:23,26"), "stale sensor stops program with cooling and no handback target");
         fresh = true;
         program.Run("Regression"); failMode = true; calls.Clear();
         var operation = (GuiOp)FormatterServices.GetUninitializedObject(typeof(GuiOp));
@@ -355,6 +367,7 @@ internal static class Regression {
             Check(updateError == null && terminateError == null, "serialized update and termination succeed");
             Check(!program.IsEnabled, "background update cannot revive terminated program");
             Check(calls.FindLastIndex(c => c.StartsWith("levels:")) < calls.FindLastIndex(c => c == "mode:48:True"), "no target follows Auto restoration");
+            Equal("levels:23,26", calls[calls.FindLastIndex(c => c.StartsWith("levels:"))], "the last target before Auto is the handback target");
             calls.Clear(); platform.Fans.MaintainControl();
             Equal(0, calls.Count, "concurrent Auto cannot restart heartbeat renewal");
         }
@@ -375,51 +388,66 @@ internal static class Regression {
         InstallBios();
         var timeout = typeof(Hw).GetMethod("BiosControlTimeout", BindingFlags.NonPublic | BindingFlags.Static);
         Equal(120, (int)timeout.Invoke(null, new object[] { PowerLineStatus.Online }), "AC OEM control timeout");
-        Equal(600, (int)timeout.Invoke(null, new object[] { PowerLineStatus.Offline }), "battery OEM control timeout");
+        Equal(240, (int)timeout.Invoke(null, new object[] { PowerLineStatus.Offline }), "battery OEM control timeout");
         var fans = Fans(victus);
         fans.MaintainControl();
         Equal(0, calls.Count, "startup Auto does not acquire OEM fan control");
-        fans.SetLevels(new byte[] {35,36}); calls.Clear();
+        fans.RestoreAutomatic(BiosData.FanMode.Default);
+        Equal("mode:48:True", calls.Single(), "Auto without prior OEM control only sends the mode");
+        calls.Clear(); fans.SetLevels(new byte[] {35,36}); calls.Clear();
         fans.MaintainControl();
         Equal("heartbeat", calls.Single(), "fixed control renews watchdog");
         calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Performance);
-        Equal("mode:49:True", calls.Single(), "Auto changes mode without renewing control or writing RPM");
-        Check(fans.GetCountdown() > 0 && fans.GetCountdown() <= 600, "Auto displays estimated handback countdown");
-        typeof(Hw).GetField("LastBiosHeartbeatTimeout", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, 600);
+        Equal("heartbeat|levels:23,26|mode:49:True", string.Join("|", calls), "Auto hands back through the moderate target once");
+        Check(fans.GetCountdown() > 0 && fans.GetCountdown() <= 240, "Auto displays estimated handback countdown");
+        calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Performance);
+        Equal("mode:49:True", calls.Single(), "second Auto after handback only sends the mode");
+        calls.Clear(); fans.MaintainControl();
+        Equal(0, calls.Count, "no renewal after handback");
+        typeof(Hw).GetField("LastBiosHeartbeatTimeout", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, 240);
         typeof(Hw).GetField("LastBiosHeartbeat", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null,
             Stopwatch.GetTimestamp() - 121L * Stopwatch.Frequency);
         Check(fans.GetCountdown() > 0, "battery countdown persists beyond AC timeout");
         calls.Clear(); fans.MaintainControl(); fans.MaintainControl();
         Equal(0, calls.Count, "Auto refresh never extends watchdog");
         typeof(Hw).GetField("LastBiosHeartbeat", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null,
-            Stopwatch.GetTimestamp() - 601L * Stopwatch.Frequency);
+            Stopwatch.GetTimestamp() - 241L * Stopwatch.Frequency);
         Equal(0, fans.GetCountdown(), "expired watchdog hides countdown");
         fans.SetOff(true); calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
-        Equal("max:True|mode:48:True", string.Join("|", calls), "Off handback restores cooling without renewing watchdog");
+        Equal("heartbeat|levels:23,26|mode:48:True", string.Join("|", calls), "Off handback restores cooling without renewing watchdog");
         calls.Clear(); fans.MaintainControl();
         Equal(0, calls.Count, "Off-to-Auto stops renewal");
         foreach(byte[] levels in new[] {new byte[] {0,35}, new byte[] {35,0}}) {
             fans.SetLevels(levels);
             Check(!fans.GetOff(), "one stopped fan is not the both-off UI state");
             calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
-            Equal("max:True|mode:48:True", string.Join("|", calls), "Auto restores cooling for either stopped fan");
+            Equal("heartbeat|levels:23,26|mode:48:True", string.Join("|", calls), "Auto restores cooling for either stopped fan");
         }
-        calls.Clear(); failLevels = true;
+        calls.Clear(); failLevelTarget = "0,35";
         Throws(() => fans.SetLevels(new byte[] {0,35}), "partial zero-target failure reported");
-        Equal("heartbeat|max:True|mode:48:True", string.Join("|", calls), "failed zero-target write immediately restores cooling");
-        failLevels = false; calls.Clear(); fans.MaintainControl();
+        Equal("heartbeat|heartbeat|levels:23,26|mode:48:True", string.Join("|", calls), "failed zero-target write immediately restores cooling");
+        failLevelTarget = null; calls.Clear(); fans.MaintainControl();
         Equal(0, calls.Count, "failed zero-target write cannot renew manual control");
         fans.SetLevels(new byte[] {35,35}); failHeartbeat = true;
         Throws(() => fans.SetLevels(new byte[] {40,40}), "failed heartbeat reported");
         failHeartbeat = false; calls.Clear(); fans.MaintainControl();
         Equal(0, calls.Count, "failed acquisition clears previous manual renewal");
-        fans.SetLevels(new byte[] {35,35}); failMax = true;
+        fans.SetLevels(new byte[] {35,35}); failMax = true; calls.Clear();
         Throws(() => fans.SetMax(true), "failed Max reported");
+        Equal("heartbeat|heartbeat|levels:23,26|mode:48:True", string.Join("|", calls), "failed Max hands back");
         failMax = false; calls.Clear(); fans.MaintainControl();
         Equal(0, calls.Count, "failed Max clears previous manual renewal");
         fans.SetLevels(new byte[] {0,35}); fans.SetLevels(new byte[] {35,35});
         calls.Clear(); fans.RestoreAutomatic(BiosData.FanMode.Default);
-        Equal("mode:48:True", string.Join("|", calls), "successful nonzero targets clear stopped-fan state");
+        Equal("heartbeat|levels:23,26|mode:48:True", string.Join("|", calls), "successful nonzero targets clear stopped-fan state");
+        // A failed handback write is reported, stops renewal, and is retried by the next Auto
+        fans.SetLevels(new byte[] {35,35}); calls.Clear(); failLevelTarget = "23,26";
+        Throws(() => fans.RestoreAutomatic(BiosData.FanMode.Default), "failed handback write reported");
+        Equal("heartbeat", calls.Single(), "failed handback sends no mode");
+        failLevelTarget = null; calls.Clear(); fans.MaintainControl();
+        Equal(0, calls.Count, "failed handback still stops renewal");
+        fans.RestoreAutomatic(BiosData.FanMode.Default);
+        Equal("heartbeat|levels:23,26|mode:48:True", string.Join("|", calls), "next Auto retries the failed handback");
         fans.SetMax(true); calls.Clear(); fans.MaintainControl();
         Equal("heartbeat", calls.Single(), "Max renews watchdog");
         fans.SetMax(false); calls.Clear(); fans.MaintainControl();
@@ -494,6 +522,84 @@ internal static class Regression {
         }
         Throws(() => payloadMethod.Invoke(null, new object[] {new byte[4], table, BiosData.KbdType.Standard}), "truncated keyboard buffer rejected");
     }
+    static void CliFanInput() {
+        InstallBios();
+        var flags = BindingFlags.NonPublic | BindingFlags.Static;
+        var setLevel = typeof(CliOp).GetMethod("BiosSetFanLevel", flags).MakeGenericMethod(typeof(BiosData.FanType));
+        Action<byte[]> sendLevel = values => calls.Add("levels:" + string.Join(",", values));
+        foreach(string invalid in new[] {"30,3O", "3O,30", "30", "30,30,30", "", ",", "30,"}) {
+            calls.Clear();
+            setLevel.Invoke(null, new object[] {"Fan {0}", invalid, sendLevel});
+            Equal(0, calls.Count, "invalid CLI fan level '" + invalid + "' sends nothing");
+        }
+        calls.Clear();
+        setLevel.Invoke(null, new object[] {"Fan {0}", "30,40", sendLevel});
+        Equal("levels:30,40", string.Join("|", calls), "valid CLI fan level still sent");
+        calls.Clear();
+        setLevel.Invoke(null, new object[] {"Fan {0}", "0x1E,0b101000", sendLevel});
+        Equal("levels:30,40", string.Join("|", calls), "hexadecimal and binary CLI fan levels still sent");
+
+        var setTable = typeof(CliOp).GetMethods(flags).Single(m => m.Name == "BiosSetStruct"
+            && m.GetParameters().Length == 3 && m.GetParameters()[2].ParameterType == typeof(Action<BiosData.FanTable>));
+        Action<BiosData.FanTable> sendTable = table => calls.Add("table:" + table.LevelCount);
+        foreach(string invalid in new[] {"30,40:35,45,55", "30,4O,50", "30,40,50,60", "30,40,50:", "", "30,40,300"}) {
+            calls.Clear();
+            setTable.Invoke(null, new object[] {"Table", invalid, sendTable});
+            Equal(0, calls.Count, "invalid CLI fan table '" + invalid + "' sends nothing");
+        }
+        calls.Clear();
+        setTable.Invoke(null, new object[] {"Table", "30,40,50:35,45,55", sendTable});
+        Equal("table:2", string.Join("|", calls), "valid CLI fan table still sent");
+        Environment.ExitCode = 0; // The preceding errors were intentional.
+    }
+    static void ConfigLoad() {
+        string ProgramXml(string name, string temperature, string cpu, string gpu) {
+            return "<Program Name=\"" + name + "\"><FanMode>Performance</FanMode><GpuPower>Maximum</GpuPower>"
+                + "<Level Temperature=\"" + temperature + "\"><Cpu>" + cpu + "</Cpu><Gpu>" + gpu + "</Gpu></Level></Program>";
+        }
+        Action<string> load = body => {
+            File.WriteAllText(Config.FilePath, "<OmenMon><Config>" + body + "</Config></OmenMon>");
+            Config.Load();
+        };
+        string savedDefault = Config.FanProgramDefault, savedAlt = Config.FanProgramDefaultAlt, savedGpu = Config.GpuPowerDefault;
+        try {
+            // Malformed fan program values are not silently turned into 0
+            load("<FanPrograms>"
+                + ProgramXml("CfgGood", "50", "30", "31")
+                + ProgramXml("CfgBadCpu", "50", "3O", "31")
+                + ProgramXml("CfgBadGpu", "50", "30", "")
+                + ProgramXml("CfgBadTemperature", "5O", "30", "31")
+                + ProgramXml("CfgOverflow", "50", "300", "31")
+                + "</FanPrograms>");
+            Check(Config.FanProgram.ContainsKey("CfgGood"), "valid fan program loads");
+            Equal("30,31", string.Join(",", Config.FanProgram["CfgGood"].Level[50]), "valid fan program levels");
+            foreach(string name in new[] {"CfgBadCpu", "CfgBadGpu", "CfgBadTemperature", "CfgOverflow"})
+                Check(!Config.FanProgram.ContainsKey(name), "malformed fan program " + name + " discarded");
+
+            // Missing or empty nodes keep the existing defaults
+            Config.FanProgramDefault = "KeepDefault"; Config.FanProgramDefaultAlt = "KeepAlt"; Config.GpuPowerDefault = "Medium";
+            load("");
+            Equal("KeepDefault", Config.FanProgramDefault, "missing FanProgramDefault keeps default");
+            Equal("KeepAlt", Config.FanProgramDefaultAlt, "missing FanProgramDefaultAlt keeps default");
+            Equal("Medium", Config.GpuPowerDefault, "missing GpuPowerDefault keeps default");
+            load("<FanProgramDefault/><FanProgramDefaultAlt></FanProgramDefaultAlt><GpuPowerDefault/>");
+            Equal("KeepDefault", Config.FanProgramDefault, "empty FanProgramDefault keeps default");
+            Equal("KeepAlt", Config.FanProgramDefaultAlt, "empty FanProgramDefaultAlt keeps default");
+            Equal("Medium", Config.GpuPowerDefault, "empty GpuPowerDefault keeps default");
+            load("<FanProgramDefault>CfgGood</FanProgramDefault><FanProgramDefaultAlt>CfgAlt</FanProgramDefaultAlt><GpuPowerDefault>Minimum</GpuPowerDefault>");
+            Equal("CfgGood", Config.FanProgramDefault, "configured FanProgramDefault loads");
+            Equal("CfgAlt", Config.FanProgramDefaultAlt, "configured FanProgramDefaultAlt loads");
+            Equal("Minimum", Config.GpuPowerDefault, "configured GpuPowerDefault loads");
+        } finally {
+            Config.FanProgram.Remove("CfgGood");
+            Config.FanProgramDefault = savedDefault; Config.FanProgramDefaultAlt = savedAlt; Config.GpuPowerDefault = savedGpu;
+        }
+    }
+    static void EcMutexUnavailable() {
+        typeof(OmenMon.Hardware.Ec.EmbeddedControllerMutex).GetField("m", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, null);
+        Check(!OmenMon.Hardware.Ec.EmbeddedControllerMutex.Wait(0), "missing EC lock reports failure instead of throwing");
+        OmenMon.Hardware.Ec.EmbeddedControllerMutex.Release();
+    }
     static void EcReports() {
         var save = typeof(CliOp).GetMethod("SaveEcReport", BindingFlags.NonPublic | BindingFlags.Static);
         var data = new CliOp.EcMonData[256];
@@ -558,7 +664,7 @@ internal static class Regression {
             }
             work = Path.Combine(Path.GetTempPath(), "OmenMonRegression-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(work); Config.FilePath = Path.Combine(work, "sensors.xml");
-            foreach(Action test in new Action[] { FanControl, ControlHeartbeat, ModeNames, Keyboard, GpuPower, SensorPersistence, FanPrograms, ProgramTransactions, EcReports }) {
+            foreach(Action test in new Action[] { FanControl, ControlHeartbeat, ModeNames, Keyboard, GpuPower, SensorPersistence, FanPrograms, ProgramTransactions, CliFanInput, ConfigLoad, EcMutexUnavailable, EcReports }) {
                 test(); Console.WriteLine("PASS " + test.Method.Name);
             }
             RedirectedCli(Path.GetFullPath(args[0])); Console.WriteLine("PASS RedirectedCli");

@@ -237,6 +237,27 @@ namespace OmenMon.AppGui {
 
         // Handles the fan settings button being clicked
         private void EventActionFanSet(object sender, EventArgs e) {
+
+            // Validate the program selection and show the message
+            // before taking the lock, as the dialog is modal
+            if(this.RdoFanProg.Checked
+                && !(this.CmbFanProg.SelectedValue != null
+                    && (string) this.CmbFanProg.SelectedValue != ""
+                    && Config.FanProgram.ContainsKey(
+                        (string) this.CmbFanProg.SelectedValue))) {
+
+                Context.Op.CancelAutoConfig();
+
+                MessageBox.Show(
+                    this, // Modal
+                    Config.Locale.Get(Config.L_GUI_MAIN + Gui.G_FAN + "ProgSetNoSel"),
+                    Config.Locale.Get(Config.L_GUI_MAIN + Gui.G_FAN + "ProgSet"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Exclamation);
+                return;
+
+            }
+
             lock(Hw.BiosControlLock) { ApplyFanSettings(sender, e); }
         }
 
@@ -267,16 +288,8 @@ namespace OmenMon.AppGui {
                     // Reset the program update counter
                     Context.UpdateProgramTick = 1;
 
-                } else {
-
-                    MessageBox.Show(
-                        this, // Modal
-                        Config.Locale.Get(Config.L_GUI_MAIN + Gui.G_FAN + "ProgSetNoSel"),
-                        Config.Locale.Get(Config.L_GUI_MAIN + Gui.G_FAN + "ProgSet"),
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Exclamation);
-
                 }
+                // Note: an invalid selection is reported before taking the lock
 
             // Switch off the fan
             } else if(this.RdoFanOff.Checked) {
@@ -705,7 +718,7 @@ namespace OmenMon.AppGui {
             try {
                 if(!this.TrkFan0Lvl.Enabled)
                     this.TrkFan0Lvl.Value = Conv.GetConstrained(
-                        Context.Op.Platform.Fans.Fan[0].GetLevel(), this.TrkFan0Lvl.Minimum, this.TrkFan1Lvl.Maximum);
+                        Context.Op.Platform.Fans.Fan[0].GetLevel(), this.TrkFan0Lvl.Minimum, this.TrkFan0Lvl.Maximum);
                 if(!this.TrkFan1Lvl.Enabled)
                     this.TrkFan1Lvl.Value = Conv.GetConstrained(
                         Context.Op.Platform.Fans.Fan[1].GetLevel(), this.TrkFan1Lvl.Minimum, this.TrkFan1Lvl.Maximum);
@@ -846,9 +859,21 @@ namespace OmenMon.AppGui {
 
         // Keeps updating the color as it changes in the Color Picker dialog
         public void UpdateKbdCallback(int color) {
-            Kbd.SetColor(ColorTranslator.FromWin32(color).ToArgb());
-            this.TxtKbdColorVal.Text = Kbd.GetParam();
-            this.CmbKbdColorPreset.SelectedValue = Kbd.GetPreset();
+            // This runs inside the native color dialog hook,
+            // so no exception may escape through the native frames
+            try {
+                // Store the color without the alpha channel, as elsewhere
+                Kbd.SetColor(Conv.GetColorNoAlpha(ColorTranslator.FromWin32(color).ToArgb()));
+                this.TxtKbdColorVal.Text = Kbd.GetParam();
+                this.CmbKbdColorPreset.SelectedValue = Kbd.GetPreset();
+            } catch {
+                try {
+                    // Restore the actual state after a rejected command
+                    Kbd.GetHw();
+                    this.TxtKbdColorVal.Text = Kbd.GetParam();
+                    this.CmbKbdColorPreset.SelectedValue = Kbd.GetPreset();
+                } catch { }
+            }
         }
 
         // Update the system information while preserving the status message

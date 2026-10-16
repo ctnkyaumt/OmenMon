@@ -222,11 +222,14 @@ namespace OmenMon.Library {
                     if(GetBool(xml, XmlPrefix + "FanLevelUseEc", out flag))
                         FanLevelUseEc = flag;
 
-                    FanProgramDefault =
-                        GetString(xml, XmlPrefix + "FanProgramDefault");
+                    // A missing or empty node keeps the existing default
+                    string stringValue;
 
-                    FanProgramDefaultAlt =
-                        GetString(xml, XmlPrefix + "FanProgramDefaultAlt");
+                    if((stringValue = GetString(xml, XmlPrefix + "FanProgramDefault")) != "")
+                        FanProgramDefault = stringValue;
+
+                    if((stringValue = GetString(xml, XmlPrefix + "FanProgramDefaultAlt")) != "")
+                        FanProgramDefaultAlt = stringValue;
 
                     if(GetBool(xml, XmlPrefix + "FanProgramModeCheckFirst", out flag))
                         FanProgramModeCheckFirst = flag;
@@ -234,8 +237,8 @@ namespace OmenMon.Library {
                     if(GetBool(xml, XmlPrefix + "FanProgramSuspend", out flag))
                         FanProgramSuspend = flag;
 
-                    GpuPowerDefault =
-                        GetString(xml, XmlPrefix + "GpuPowerDefault");
+                    if((stringValue = GetString(xml, XmlPrefix + "GpuPowerDefault")) != "")
+                        GpuPowerDefault = stringValue;
 
                     if(GetWord(xml, XmlPrefix + "GpuPowerSetInterval", out value))
                         GpuPowerSetInterval = value;
@@ -378,12 +381,15 @@ namespace OmenMon.Library {
                             // Iterate through the levels specified in the XML file
                             foreach(XmlNode subnode in node.SelectNodes(XmlElementFanProgramLevel)) {
 
+                                // Discard the whole program if any value cannot be parsed
+                                byte levelTemperature, levelCpu, levelGpu;
+                                if(!Conv.GetByte(subnode.Attributes[XmlAttrFanProgramLevelTemperature].Value, out levelTemperature)
+                                    || !Conv.GetByte(subnode[XmlElementFanProgramLevelCpu].InnerText, out levelCpu)
+                                    || !Conv.GetByte(subnode[XmlElementFanProgramLevelGpu].InnerText, out levelGpu))
+                                    throw new FormatException();
+
                                 // Populate the level data
-                                levels[Conv.GetByte(
-                                    subnode.Attributes[XmlAttrFanProgramLevelTemperature].Value)] =
-                                        new byte[] {
-                                            Conv.GetByte(subnode[XmlElementFanProgramLevelCpu].InnerText),
-                                            Conv.GetByte(subnode[XmlElementFanProgramLevelGpu].InnerText)};
+                                levels[levelTemperature] = new byte[] { levelCpu, levelGpu };
 
                             }
 

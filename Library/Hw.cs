@@ -63,9 +63,11 @@ namespace OmenMon.Library {
         private static int LastBiosHeartbeatTimeout;
 
         private static int BiosControlTimeout(PowerLineStatus power) {
-            // Victus 8BD4 estimate: about 120 s on AC; battery handback has
-            // occurred at 606-839 s. Other clients can extend the wait.
-            return power == PowerLineStatus.Offline ? 600 : 120;
+            // Victus 8BD4 estimate: about 120 s on AC. Battery handback for fixed
+            // targets was measured at ~240 s after the last heartbeat (243 s twice);
+            // it has also taken up to 839 s. On battery the firmware may need a
+            // thermal or power event to take over, and other clients can extend the wait.
+            return power == PowerLineStatus.Offline ? 240 : 120;
         }
 
         // GC10 renews OEM control on Victus, including keyboard write access.

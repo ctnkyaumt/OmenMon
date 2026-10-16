@@ -197,10 +197,12 @@ namespace OmenMon.Hardware.Platform {
 
         // Terminates the running fan program, if any is running
         public bool Terminate() {
-            lock(Hw.BiosControlLock) { return TerminateCore(); }
+            lock(Hw.BiosControlLock) { return TerminateCore(false); }
         }
 
-        private bool TerminateCore() {
+        // With keepCooling, no handback target is written; used after the
+        // update failure fallback, which may have just set maximum cooling
+        private bool TerminateCore(bool keepCooling) {
 
             // Fail if no program active
             if(!this.IsEnabled)
@@ -213,7 +215,7 @@ namespace OmenMon.Hardware.Platform {
             this.IsSuspended = false;
 
             try {
-                Platform.Fans.RestoreAutomatic(this.LastFanMode);
+                Platform.Fans.RestoreAutomatic(this.LastFanMode, keepCooling);
             } finally {
                 try {
                     UpdateGpuPower(true, this.LastGpuPowerData);
@@ -247,7 +249,8 @@ namespace OmenMon.Hardware.Platform {
             } catch {
                 // A failed update must not keep retrying fixed targets or
                 // renewing control. Preserve the original error for the caller.
-                try { Terminate(); } catch { }
+                // Keep any maximum cooling just requested instead of handing back
+                try { TerminateCore(true); } catch { }
                 throw;
             }
 

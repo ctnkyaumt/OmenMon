@@ -45,6 +45,11 @@ namespace OmenMon.AppGui {
         private System.Windows.Forms.Timer TrayUpdateTimer;
         private System.Windows.Forms.Timer HeartbeatTimer;
 
+        // Tracks whether the last tick of each timer failed,
+        // so that only one balloon is shown per failure streak
+        private bool UpdateTimerFailed;
+        private bool HeartbeatTimerFailed;
+
         // Stores the number of ticks elapsed since
         // the last update of a particular category
         internal int UpdateIconTick;
@@ -89,6 +94,8 @@ namespace OmenMon.AppGui {
             this.Notification.ContextMenuStrip.ItemClicked += Menu.EventItemClicked;
             this.Notification.ContextMenuStrip.Opening += Menu.EventOpening;
             this.Notification.MouseClick += EventIconMouseClick;
+            // Subscribe exactly once, so that a click is not handled multiple times
+            this.Notification.BalloonTipClicked += Menu.EventActionShowFormMain;
 
             // Add a filter to intercept any custom messages
             this.Filter = new GuiFilter(Context);
@@ -206,13 +213,37 @@ namespace OmenMon.AppGui {
         private void EventTrayUpdateTimerTick(object sender, EventArgs e)
         {
             // Perform the updates as scheduled
-            Update();
+            // Failures must not escape into the message loop
+            try {
+                Update();
+                this.UpdateTimerFailed = false;
+            } catch(Exception ex) {
+                ReportTimerFailure(ref this.UpdateTimerFailed, ex);
+            }
         }
 
         private void HardwareHeartbeatTick(object sender, EventArgs e)
         {
             // Auto must allow the Victus OEM-control watchdog to expire.
-            this.Op.Platform.Fans.MaintainControl();
+            try {
+                this.Op.Platform.Fans.MaintainControl();
+                this.HeartbeatTimerFailed = false;
+            } catch(Exception ex) {
+                ReportTimerFailure(ref this.HeartbeatTimerFailed, ex);
+            }
+        }
+
+        // Reports a timer failure non-modally, once per failure streak
+        private void ReportTimerFailure(ref bool failed, Exception e) {
+            if(failed)
+                return;
+            failed = true;
+            try {
+                ShowBalloonTip(
+                    string.IsNullOrEmpty(e.Message) ? Config.Locale.Get("ErrUnexpectedReally") : e.Message,
+                    Config.Locale.Get("ErrUnexpected"),
+                    ToolTipIcon.Error);
+            } catch { }
         }
 #endregion
 
@@ -245,11 +276,9 @@ namespace OmenMon.AppGui {
                 // Populate the data from the parameters
                 this.Notification.BalloonTipIcon = icon;
                 this.Notification.BalloonTipText = message;
-                this.Notification.BalloonTipClicked += Menu.EventActionShowFormMain;
 
-                // Also change the title if passed as a parameter
-                if(title != null)
-                    this.Notification.BalloonTipTitle = title;
+                // Also change the title, clearing a previous one if not passed
+                this.Notification.BalloonTipTitle = title != null ? title : "";
 
                 // Show the tip for a specified duration
                 this.Notification.ShowBalloonTip(Config.GuiTipDuration);

@@ -68,10 +68,11 @@ namespace OmenMon.AppGui {
             Hw.TaskSet(Config.TaskId.Gui, Config.AutoStartup);
 
             // Apply the default GPU power settings
-            this.Platform.System.SetGpuPower(
-                new BiosData.GpuPowerData(
-                    (BiosData.GpuPowerLevel)
-                        Enum.Parse(typeof(BiosData.GpuPowerLevel), Config.GpuPowerDefault)));
+            // Skip if the configured value is not a valid level
+            BiosData.GpuPowerLevel gpuPowerLevel;
+            if(Enum.TryParse(Config.GpuPowerDefault, out gpuPowerLevel)
+                && Enum.IsDefined(typeof(BiosData.GpuPowerLevel), gpuPowerLevel))
+                this.Platform.System.SetGpuPower(new BiosData.GpuPowerData(gpuPowerLevel));
 
             this.FullPower = this.Platform.System.IsFullPower();
 
