@@ -340,3 +340,9 @@ table, 23/26 (2300/2600 RPM, also native idle on AC), when leaving any control
 it holds. The fans become quiet within seconds and the firmware curve resumes
 whenever the EC hands back. Under heavy load this target holds until that
 handback; CPU and GPU firmware limits still apply.
+
+The CI artifact built from commit 15348fa (run 38928927972, 214 hardware-free
+assertions) was then exercised on battery through its own FanArray by
+reflection: SetMax(true) reached 5800/6200 RPM; RestoreAutomatic(Default)
+gave 5000/5400 after 2 seconds, 3300/3900 after 4 seconds and 2300/2600 RPM
+from 10 seconds on, steady through 40 seconds.
